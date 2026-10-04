@@ -2,16 +2,6 @@ using System;
 
 namespace PhysicalDigital.Protocols
 {
-    [Serializable]
-    public sealed class JsonPacket
-    {
-        public int seq = -1;
-        public int[] b;
-        public int pot = -1;
-        public int echo = -1;
-        public int ck = -1;
-    }
-
     public sealed class JsonDecoder : LineDecoder
     {
         private const int MaxChecksum = 255;
@@ -37,12 +27,12 @@ namespace PhysicalDigital.Protocols
             }
 
             JsonPacket packet = deserialize(text);
-            if (packet == null || packet.b == null || packet.b.Length != ControllerState.ButtonCount)
+            if (packet == null || packet.ButtonBits == null || packet.ButtonBits.Length != ControllerState.ButtonCount)
             {
                 return ParseResult.FormatError;
             }
-            if (!InRange(packet.seq, ushort.MaxValue) || !InRange(packet.pot, ControllerState.PotMax)
-                || !InRange(packet.echo, ushort.MaxValue) || !InRange(packet.ck, MaxChecksum))
+            if (!InRange(packet.SequenceNumber, ushort.MaxValue) || !InRange(packet.PotValue, ControllerState.PotMax)
+                || !InRange(packet.EchoId, ushort.MaxValue) || !InRange(packet.Checksum, MaxChecksum))
             {
                 return ParseResult.FormatError;
             }
@@ -50,7 +40,7 @@ namespace PhysicalDigital.Protocols
             int buttons = 0;
             for (int i = 0; i < ControllerState.ButtonCount; i++)
             {
-                int bit = packet.b[i];
+                int bit = packet.ButtonBits[i];
                 if (bit != 0 && bit != 1)
                 {
                     return ParseResult.FormatError;
@@ -58,13 +48,13 @@ namespace PhysicalDigital.Protocols
                 buttons |= bit << i;
             }
 
-            state.Seq = (ushort)packet.seq;
+            state.Seq = (ushort)packet.SequenceNumber;
             state.Buttons = (byte)buttons;
-            state.Pot = (ushort)packet.pot;
-            state.Echo = (ushort)packet.echo;
+            state.Pot = (ushort)packet.PotValue;
+            state.Echo = (ushort)packet.EchoId;
 
             state.WriteCanonicalPayload(canonical, 0);
-            if (Checksums.Sum8(canonical, 0, canonical.Length) != packet.ck)
+            if (Checksums.Sum8(canonical, 0, canonical.Length) != packet.Checksum)
             {
                 state = default;
                 return ParseResult.IntegrityError;

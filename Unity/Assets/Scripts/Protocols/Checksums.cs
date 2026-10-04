@@ -2,6 +2,12 @@ namespace PhysicalDigital.Protocols
 {
     public static class Checksums
     {
+        private const int ByteMask = 0xFF;
+        private const int BitsPerByte = 8;
+        private const ushort CrcInitial = 0xFFFF;
+        private const ushort CrcPolynomial = 0x1021;
+        private const ushort CrcTopBit = 0x8000;
+
         public static byte Xor8(string text, int start, int count)
         {
             byte checksum = 0;
@@ -19,18 +25,18 @@ namespace PhysicalDigital.Protocols
             {
                 sum += data[i];
             }
-            return (byte)(sum & 0xFF);
+            return (byte)(sum & ByteMask);
         }
 
         public static ushort Crc16Ccitt(byte[] data, int offset, int count)
         {
-            ushort crc = 0xFFFF;
+            ushort crc = CrcInitial;
             for (int i = offset; i < offset + count; i++)
             {
-                crc ^= (ushort)(data[i] << 8);
-                for (int bit = 0; bit < 8; bit++)
+                crc ^= (ushort)(data[i] << BitsPerByte);
+                for (int bit = 0; bit < BitsPerByte; bit++)
                 {
-                    crc = (crc & 0x8000) != 0 ? (ushort)((crc << 1) ^ 0x1021) : (ushort)(crc << 1);
+                    crc = (crc & CrcTopBit) != 0 ? (ushort)((crc << 1) ^ CrcPolynomial) : (ushort)(crc << 1);
                 }
             }
             return crc;

@@ -52,28 +52,31 @@ namespace PhysicalDigital.Game
         private void Update()
         {
             pressedThisFrame.Clear();
+            CollectKeyboardPresses();
+            ApplySerialStates();
+            UpdateSimulatedPot();
+        }
+
+        private void CollectKeyboardPresses()
+        {
             while (pendingKeyPresses.Count > 0)
             {
                 pressedThisFrame.Add(pendingKeyPresses.Dequeue());
             }
+        }
 
+        private void ApplySerialStates()
+        {
             batch.Clear();
             link.Drain(batch);
             long now = Stopwatch.GetTimestamp();
             foreach (ControllerState state in batch)
             {
-                int rising = state.Buttons & ~serialButtons;
-                for (int i = 0; i < ControllerState.ButtonCount; i++)
-                {
-                    if ((rising & (1 << i)) != 0)
-                    {
-                        pressedThisFrame.Add(i);
-                    }
-                }
+                AddRisingEdges(state.Buttons);
                 serialButtons = state.Buttons;
                 serialPot = state.Pot;
                 hasSerialData = true;
-                queueLatencySumMs += SerialLink.TicksToMs(now - state.RxTimestamp);
+                queueLatencySumMs += StopwatchTicks.ToMilliseconds(now - state.RxTimestamp);
                 queueLatencyCount++;
             }
 
@@ -82,36 +85,51 @@ namespace PhysicalDigital.Game
                 serialButtons = 0;
                 hasSerialData = false;
             }
+        }
 
+        private void AddRisingEdges(byte buttons)
+        {
+            int rising = buttons & ~serialButtons;
+            for (int i = 0; i < ControllerState.ButtonCount; i++)
+            {
+                if ((rising & (1 << i)) != 0)
+                {
+                    pressedThisFrame.Add(i);
+                }
+            }
+        }
+
+        private void UpdateSimulatedPot()
+        {
             float direction = (keyPotUp ? 1f : 0f) - (keyPotDown ? 1f : 0f);
             simulatedPot01 = Mathf.Clamp01(simulatedPot01 + direction * KeyboardPotSpeed * Time.unscaledDeltaTime);
         }
 
         private void OnGUI()
         {
-            Event e = Event.current;
-            if (e.type != EventType.KeyDown && e.type != EventType.KeyUp)
+            Event currentEvent = Event.current;
+            if (currentEvent.type != EventType.KeyDown && currentEvent.type != EventType.KeyUp)
             {
                 return;
             }
-            bool down = e.type == EventType.KeyDown;
+            bool isKeyDown = currentEvent.type == EventType.KeyDown;
 
-            int index = KeyToButton(e.keyCode);
+            int index = KeyToButton(currentEvent.keyCode);
             if (index >= 0)
             {
-                if (down && !keyHeld[index])
+                if (isKeyDown && !keyHeld[index])
                 {
                     pendingKeyPresses.Enqueue(index);
                 }
-                keyHeld[index] = down;
+                keyHeld[index] = isKeyDown;
             }
-            else if (e.keyCode == KeyCode.UpArrow)
+            else if (currentEvent.keyCode == KeyCode.UpArrow)
             {
-                keyPotUp = down;
+                keyPotUp = isKeyDown;
             }
-            else if (e.keyCode == KeyCode.DownArrow)
+            else if (currentEvent.keyCode == KeyCode.DownArrow)
             {
-                keyPotDown = down;
+                keyPotDown = isKeyDown;
             }
         }
 

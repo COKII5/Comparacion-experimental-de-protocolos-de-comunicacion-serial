@@ -137,7 +137,7 @@ El firmware aplica un antirrebote por tiempo de 20\,ms y no usa \texttt{delay()}
 \end{figure}
 
 \subsection{Datos transmitidos}
-Los tres protocolos transportan el mismo estado canónico de 7 bytes (Tabla~\ref{tab:estado}). Unity controla el Arduino con comandos de texto comunes a los tres sketches (Tabla~\ref{tab:comandos}).
+Los tres protocolos transportan el mismo estado canónico de 7 bytes (Tabla~\ref{tab:estado}). Unity controla el Arduino con comandos de texto comunes a los tres protocolos (Tabla~\ref{tab:comandos}).
 
 \begin{table}[!t]
 \renewcommand{\arraystretch}{1.2}
@@ -208,9 +208,9 @@ En Unity, un hilo dedicado lee el puerto con \texttt{System.IO.Ports.SerialPort}
 \subsection{Procedimiento de medición}
 
 \subsubsection{Condiciones fijas}
-Arduino Uno R3 (USB mediante ATmega16U2), 115200 baudios en 8N1 (10 bits por byte), envío cada 20\,ms, antirrebote de 20\,ms y Unity 6000.0.82f1 en modo Play del editor. Equipo de medición: \completar{CPU, sistema operativo y puerto USB usado, sin hub}. Las tres implementaciones comparten exactamente el mismo firmware salvo la función \texttt{sendPacket()} y el mismo canal de comandos, de modo que cualquier diferencia medida se debe solo a la codificación de la trama.
+Arduino Uno R3 (USB mediante ATmega16U2), 115200 baudios en 8N1 (10 bits por byte), envío cada 20\,ms, antirrebote de 20\,ms y Unity 6000.0.82f1 en modo Play del editor. Equipo de medición: \completar{CPU, sistema operativo y puerto USB usado, sin hub}. Las tres implementaciones salen de un único sketch (\texttt{SerialController}) que solo cambia el codificador seleccionado con la constante \texttt{ACTIVE\_PROTOCOL}, y comparten el mismo canal de comandos, de modo que cualquier diferencia medida se debe solo a la codificación de la trama.
 
-Para cada protocolo se carga su sketch, se cierra el Monitor Serial del IDE (ocupa el puerto), se conecta Unity al puerto COM y se espera a que la tasa ronde las 50 tramas/s sin errores. La rutina automática \emph{Full run} ejecuta las pruebas 1 a 4 en unos 45\,s y agrega una fila a \texttt{Measurements/summary.csv}. Se repite 3 veces por protocolo y, para JSON, además con el deserializador Newtonsoft. Durante las pruebas automáticas no se tocan los controles.
+Para cada protocolo se fija \texttt{ACTIVE\_PROTOCOL} en el sketch y se carga en el Arduino, se cierra el Monitor Serial del IDE (ocupa el puerto), se conecta Unity al puerto COM y se espera a que la tasa ronde las 50 tramas/s sin errores. La rutina automática \emph{Full run} ejecuta las pruebas 1 a 4 en unos 45\,s y agrega una fila a \texttt{Measurements/summary.csv}. Se repite 3 veces por protocolo y, para JSON, además con el deserializador Newtonsoft. Durante las pruebas automáticas no se tocan los controles.
 
 \subsubsection{Prueba 1 -- valor (corrección)}
 Unity envía \texttt{T} y el Arduino responde con un valor fijo: \texttt{seq=32126}, \texttt{b=[0,1,0,1]}, \texttt{pot=638}, \texttt{echo=125}. Unity compara lo decodificado contra ese valor y guarda los bytes crudos. El valor se eligió para que el estado canónico (\texttt{7E 7D 0A 7E 02 7D 00}) contenga \texttt{0x7E} y \texttt{0x7D}, de modo que la prueba ejercita el byte stuffing.
@@ -381,7 +381,7 @@ Una alternativa defendible si los datos la respaldan es usar el binario con CRC-
 
 % ---------------------------------------------------------------------------
 \section{Repositorio}
-El código fuente está disponible en \completar{URL de GitHub}. Contiene \texttt{Arduino/} (un sketch por protocolo y la prueba del circuito), \texttt{Unity/} (proyecto del simulador S3), \texttt{Tools/} (codificador de referencia y análisis), \texttt{Measurements/} (datos crudos) e \texttt{Informe/} (este documento).
+El código fuente está disponible en \url{https://github.com/COKII5/Comparacion-experimental-de-protocolos-de-comunicacion-serial}. Contiene \texttt{Arduino/} (el sketch \texttt{SerialController}, con un codificador por protocolo, y la prueba del circuito), \texttt{Unity/} (proyecto del simulador S3), \texttt{Tools/} (codificador de referencia y análisis), \texttt{Measurements/} (datos crudos) e \texttt{Informe/} (este documento).
 
 % references section
 \begin{thebibliography}{13}

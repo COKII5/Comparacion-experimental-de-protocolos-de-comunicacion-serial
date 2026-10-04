@@ -22,6 +22,20 @@ namespace PhysicalDigital.Protocols
             Echo = 0x007D,
         };
 
+        public static ControllerState FromCanonicalPayload(byte[] source, int offset)
+        {
+            int index = offset;
+            ControllerState state = default;
+            state.Seq = LittleEndian.ReadUInt16(source, index);
+            index += LittleEndian.UInt16Size;
+            state.Buttons = source[index];
+            index++;
+            state.Pot = LittleEndian.ReadUInt16(source, index);
+            index += LittleEndian.UInt16Size;
+            state.Echo = LittleEndian.ReadUInt16(source, index);
+            return state;
+        }
+
         public bool IsPressed(int index)
         {
             return (Buttons & (1 << index)) != 0;
@@ -34,13 +48,11 @@ namespace PhysicalDigital.Protocols
 
         public void WriteCanonicalPayload(byte[] destination, int offset)
         {
-            destination[offset + 0] = (byte)(Seq & 0xFF);
-            destination[offset + 1] = (byte)(Seq >> 8);
-            destination[offset + 2] = Buttons;
-            destination[offset + 3] = (byte)(Pot & 0xFF);
-            destination[offset + 4] = (byte)(Pot >> 8);
-            destination[offset + 5] = (byte)(Echo & 0xFF);
-            destination[offset + 6] = (byte)(Echo >> 8);
+            int index = LittleEndian.WriteUInt16(destination, offset, Seq);
+            destination[index] = Buttons;
+            index++;
+            index = LittleEndian.WriteUInt16(destination, index, Pot);
+            LittleEndian.WriteUInt16(destination, index, Echo);
         }
 
         public override string ToString()

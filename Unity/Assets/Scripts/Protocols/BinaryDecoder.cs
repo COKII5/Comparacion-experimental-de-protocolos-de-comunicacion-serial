@@ -11,10 +11,14 @@ namespace PhysicalDigital.Protocols
         public const byte TypeState = 0x01;
         public const byte StateLength = 8;
 
+        private const int LengthFieldSize = 1;
+        private const int TypeOffset = 1;
+        private const int PayloadOffset = 2;
         private const int MaxLength = 32;
         private const int CrcLength = 2;
-        private const int MaxBodyLength = 1 + MaxLength + CrcLength;
-        private const int MaxRawLength = 1 + 2 * MaxBodyLength;
+        private const int WorstCaseEscapeFactor = 2;
+        private const int MaxBodyLength = LengthFieldSize + MaxLength + CrcLength;
+        private const int MaxRawLength = 1 + WorstCaseEscapeFactor * MaxBodyLength;
         private const byte MaxButtonsMask = 0x0F;
 
         private enum Stage
@@ -29,8 +33,8 @@ namespace PhysicalDigital.Protocols
         private readonly byte[] lastFrame = new byte[MaxRawLength];
         private Stage stage = Stage.WaitStart;
         private bool escaping;
-        private int index;
-        private int needed;
+        private int bodyIndex;
+        private int bodyBytesNeeded;
         private int rawLength;
         private int lastFrameLength;
 
@@ -44,17 +48,9 @@ namespace PhysicalDigital.Protocols
 
             if (value == StartOfFrame)
             {
-                if (stage != Stage.WaitStart)
-                {
-                    Stats.FormatErrors++;
-                }
-                stage = Stage.Length;
-                escaping = false;
-                rawLength = 0;
-                AppendRaw(value);
+                BeginFrame(value);
                 return false;
             }
-
             if (stage == Stage.WaitStart)
             {
                 Stats.DiscardedBytes++;
@@ -62,44 +58,16 @@ namespace PhysicalDigital.Protocols
             }
 
             AppendRaw(value);
-
-            if (value == Escape)
+            if (!TryUnescape(ref value))
             {
-                if (escaping)
-                {
-                    return Abort();
-                }
-                escaping = true;
                 return false;
             }
-            if (escaping)
-            {
-                value ^= EscapeXor;
-                escaping = false;
-            }
-
             if (stage == Stage.Length)
             {
-                if (value < 1 || value > MaxLength)
-                {
-                    return Abort();
-                }
-                body[0] = value;
-                index = 1;
-                needed = 1 + value + CrcLength;
-                stage = Stage.Body;
+                AcceptLength(value);
                 return false;
             }
-
-            body[index] = value;
-            index++;
-            if (index < needed)
-            {
-                return false;
-            }
-
-            stage = Stage.WaitStart;
-            return Complete(out state);
+            return AcceptBodyByte(value, out state);
         }
 
         public byte[] GetLastFrame()
@@ -109,12 +77,62 @@ namespace PhysicalDigital.Protocols
             return copy;
         }
 
-        public void Reset()
+        private void BeginFrame(byte startByte)
         {
-            stage = Stage.WaitStart;
+            if (stage != Stage.WaitStart)
+            {
+                Stats.FormatErrors++;
+            }
+            stage = Stage.Length;
             escaping = false;
             rawLength = 0;
-            lastFrameLength = 0;
+            AppendRaw(startByte);
+        }
+
+        private bool TryUnescape(ref byte value)
+        {
+            if (value == Escape)
+            {
+                if (escaping)
+                {
+                    Abort();
+                    return false;
+                }
+                escaping = true;
+                return false;
+            }
+            if (escaping)
+            {
+                value ^= EscapeXor;
+                escaping = false;
+            }
+            return true;
+        }
+
+        private void AcceptLength(byte length)
+        {
+            if (length < 1 || length > MaxLength)
+            {
+                Abort();
+                return;
+            }
+            body[0] = length;
+            bodyIndex = LengthFieldSize;
+            bodyBytesNeeded = LengthFieldSize + length + CrcLength;
+            stage = Stage.Body;
+        }
+
+        private bool AcceptBodyByte(byte value, out ControllerState state)
+        {
+            state = default;
+            body[bodyIndex] = value;
+            bodyIndex++;
+            if (bodyIndex < bodyBytesNeeded)
+            {
+                return false;
+            }
+            stage = Stage.WaitStart;
+            return Complete(out state);
         }
 
         private void AppendRaw(byte value)
@@ -128,9 +146,8 @@ namespace PhysicalDigital.Protocols
 
         private bool Complete(out ControllerState state)
         {
-            state = default;
             long start = Stopwatch.GetTimestamp();
-            ParseResult result = Parse(ref state);
+            ParseResult result = Parse(out state);
             Stats.ParseTicks += Stopwatch.GetTimestamp() - start;
             Stats.ParsedFrames++;
 
@@ -155,23 +172,22 @@ namespace PhysicalDigital.Protocols
             return false;
         }
 
-        private ParseResult Parse(ref ControllerState state)
+        private ParseResult Parse(out ControllerState state)
         {
+            state = default;
             int length = body[0];
-            ushort received = (ushort)(body[1 + length] | (body[2 + length] << 8));
-            if (Checksums.Crc16Ccitt(body, 0, 1 + length) != received)
+            int crcOffset = LengthFieldSize + length;
+            ushort received = LittleEndian.ReadUInt16(body, crcOffset);
+            if (Checksums.Crc16Ccitt(body, 0, crcOffset) != received)
             {
                 return ParseResult.IntegrityError;
             }
-            if (length != StateLength || body[1] != TypeState)
+            if (length != StateLength || body[TypeOffset] != TypeState)
             {
                 return ParseResult.FormatError;
             }
 
-            state.Seq = (ushort)(body[2] | (body[3] << 8));
-            state.Buttons = body[4];
-            state.Pot = (ushort)(body[5] | (body[6] << 8));
-            state.Echo = (ushort)(body[7] | (body[8] << 8));
+            state = ControllerState.FromCanonicalPayload(body, PayloadOffset);
             if (state.Buttons > MaxButtonsMask || state.Pot > ControllerState.PotMax)
             {
                 return ParseResult.FormatError;
@@ -179,12 +195,11 @@ namespace PhysicalDigital.Protocols
             return ParseResult.Ok;
         }
 
-        private bool Abort()
+        private void Abort()
         {
             Stats.FormatErrors++;
             stage = Stage.WaitStart;
             escaping = false;
-            return false;
         }
     }
 }

@@ -13,6 +13,10 @@ namespace PhysicalDigital.Game
         private const float AttackSeconds = 0.006f;
         private const float ReleaseSeconds = 0.15f;
         private const float MasterGain = 0.3f;
+        private const float SquareAmplitude = 0.45f;
+        private const float OvertoneLevel = 0.25f;
+        private const int OvertoneMultiple = 2;
+        private const int MonoChannels = 1;
 
         private AudioSource source;
         private AudioClip[] padClips;
@@ -46,15 +50,15 @@ namespace PhysicalDigital.Game
             float[] samples = new float[sampleCount];
             for (int i = 0; i < sampleCount; i++)
             {
-                float t = i / (float)SampleRate;
-                float envelope = Mathf.Min(1f, t / AttackSeconds) * Mathf.Clamp01((duration - t) / ReleaseSeconds);
-                float phase = 2f * Mathf.PI * frequency * t;
+                float seconds = i / (float)SampleRate;
+                float envelope = Mathf.Min(1f, seconds / AttackSeconds) * Mathf.Clamp01((duration - seconds) / ReleaseSeconds);
+                float phase = 2f * Mathf.PI * frequency * seconds;
                 float wave = square
-                    ? Mathf.Sign(Mathf.Sin(phase)) * 0.45f
-                    : Mathf.Sin(phase) + 0.25f * Mathf.Sin(2f * phase);
+                    ? Mathf.Sign(Mathf.Sin(phase)) * SquareAmplitude
+                    : Mathf.Sin(phase) + OvertoneLevel * Mathf.Sin(OvertoneMultiple * phase);
                 samples[i] = MasterGain * envelope * wave;
             }
-            AudioClip clip = AudioClip.Create(name, sampleCount, 1, SampleRate, false);
+            AudioClip clip = AudioClip.Create(name, sampleCount, MonoChannels, SampleRate, false);
             clip.SetData(samples, 0);
             return clip;
         }

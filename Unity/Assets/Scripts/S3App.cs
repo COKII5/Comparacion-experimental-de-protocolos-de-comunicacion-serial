@@ -83,8 +83,8 @@ namespace PhysicalDigital
             Pads = new PadView[PadColors.Length];
             for (int i = 0; i < PadColors.Length; i++)
             {
-                float x = (PadSlots[i] - (PadColors.Length - 1) / 2f) * PadSpacing;
-                Pads[i] = PadView.Create(stage, $"Pad B{i + 1}", new Vector3(x, PadY, 0f), PadSize, PadColors[i]);
+                float padX = (PadSlots[i] - (PadColors.Length - 1) / 2f) * PadSpacing;
+                Pads[i] = PadView.Create(stage, $"Pad B{i + 1}", new Vector3(padX, PadY, 0f), PadSize, PadColors[i]);
             }
         }
     }

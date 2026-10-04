@@ -27,6 +27,10 @@ namespace PhysicalDigital.Game
         private const float ErrorFlashSeconds = 0.6f;
         private const float HintFlashSeconds = 1.2f;
         private const string BestScoreKey = "S3_BestScore";
+        private const float AttractWaveSpeed = 2.2f;
+        private const float AttractPadPhaseShift = 0.9f;
+        private const float AttractPulseSharpness = 6f;
+        private const float AttractMaxGlow = 0.55f;
 
         private readonly List<int> sequence = new List<int>();
         private ControllerInput input;
@@ -40,7 +44,6 @@ namespace PhysicalDigital.Game
 
         public Phase CurrentPhase { get; private set; } = Phase.Attract;
         public int Round => sequence.Count;
-        public int Progress => inputIndex;
         public int Score { get; private set; }
         public int Best { get; private set; }
         public string Message { get; private set; } = "";
@@ -240,8 +243,8 @@ namespace PhysicalDigital.Game
         {
             for (int i = 0; i < pads.Length; i++)
             {
-                float phase = Time.time * 2.2f - i * 0.9f;
-                pads[i].SetIdle(Mathf.Pow(Mathf.Max(0f, Mathf.Sin(phase)), 6f) * 0.55f);
+                float phase = Time.time * AttractWaveSpeed - i * AttractPadPhaseShift;
+                pads[i].SetIdle(Mathf.Pow(Mathf.Max(0f, Mathf.Sin(phase)), AttractPulseSharpness) * AttractMaxGlow);
             }
         }
     }

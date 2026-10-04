@@ -18,11 +18,13 @@ from matplotlib.figure import Figure  # noqa: E402
 
 Row = dict[str, str]
 
+
 @dataclass(frozen=True)
 class Protocol:
     key: str
     label: str
     color: str
+
 
 PROTOCOLS: Final[list[Protocol]] = [
     Protocol("CSV", "CSV", "#2a78d6"),
@@ -36,11 +38,28 @@ MUTED: Final[str] = "#898781"
 GRID: Final[str] = "#e1e0d9"
 AXIS: Final[str] = "#c3c2b7"
 DPI: Final[int] = 200
+TITLE_FONT_SIZE: Final[int] = 11
+LABEL_FONT_SIZE: Final[int] = 9
+NOTE_FONT_SIZE: Final[int] = 8
+TITLE_PAD: Final[int] = 10
+GRID_LINE_WIDTH: Final[float] = 0.6
+BAR_WIDTH: Final[float] = 0.55
+BAR_EDGE_WIDTH: Final[int] = 2
+VALUE_LABEL_OFFSET: Final[float] = 0.02
+Y_HEADROOM: Final[float] = 1.18
+BOX_WIDTH: Final[float] = 0.5
+MEDIAN_LABEL_OFFSET: Final[float] = 0.3
+SINGLE_FIGURE_SIZE: Final[tuple[float, float]] = (6.4, 3.4)
+LATENCY_FIGURE_SIZE: Final[tuple[float, float]] = (6.4, 3.6)
+DOUBLE_FIGURE_SIZE: Final[tuple[float, float]] = (7.2, 3.4)
+PERCENT: Final[float] = 100.0
+
 
 def summary_key(row: Row) -> str:
     if row["protocol"] == "JSON":
         return f"JSON_{row['deserializer']}"
     return row["protocol"]
+
 
 def read_summary(folder: str) -> dict[str, Row]:
     path: str = os.path.join(folder, "summary.csv")
@@ -52,6 +71,7 @@ def read_summary(folder: str) -> dict[str, Row]:
             latest[summary_key(row)] = row
     return latest
 
+
 def read_rtt(folder: str) -> dict[str, list[float]]:
     samples: dict[str, list[float]] = {}
     for protocol in PROTOCOLS:
@@ -59,8 +79,9 @@ def read_rtt(folder: str) -> dict[str, list[float]]:
         if not files:
             continue
         with open(files[-1], newline="", encoding="utf-8") as handle:
-            samples[protocol.key] = [float(r["rtt_ms"]) for r in csv.DictReader(handle)]
+            samples[protocol.key] = [float(row["rtt_ms"]) for row in csv.DictReader(handle)]
     return samples
+
 
 def number(row: Row, field: str) -> float:
     try:
@@ -68,44 +89,54 @@ def number(row: Row, field: str) -> float:
     except (KeyError, ValueError):
         return math.nan
 
-def style_axes(ax: Axes, title: str, y_label: str) -> None:
-    ax.set_title(title, loc="left", fontsize=11, color=INK, pad=10)
-    ax.set_ylabel(y_label, fontsize=9, color=INK_SECONDARY)
-    ax.grid(axis="y", color=GRID, linewidth=0.6)
-    ax.set_axisbelow(True)
+
+def present_protocols(available: dict[str, Row] | dict[str, list[float]]) -> list[Protocol]:
+    return [protocol for protocol in PROTOCOLS if protocol.key in available]
+
+
+def style_axes(axes: Axes, title: str, y_label: str) -> None:
+    axes.set_title(title, loc="left", fontsize=TITLE_FONT_SIZE, color=INK, pad=TITLE_PAD)
+    axes.set_ylabel(y_label, fontsize=LABEL_FONT_SIZE, color=INK_SECONDARY)
+    axes.grid(axis="y", color=GRID, linewidth=GRID_LINE_WIDTH)
+    axes.set_axisbelow(True)
     for side in ("top", "right", "left"):
-        ax.spines[side].set_visible(False)
-    ax.spines["bottom"].set_color(AXIS)
-    ax.tick_params(axis="both", colors=MUTED, labelsize=9, length=0)
-    for tick_label in ax.get_xticklabels():
+        axes.spines[side].set_visible(False)
+    axes.spines["bottom"].set_color(AXIS)
+    axes.tick_params(axis="both", colors=MUTED, labelsize=LABEL_FONT_SIZE, length=0)
+    for tick_label in axes.get_xticklabels():
         tick_label.set_color(INK_SECONDARY)
 
-def draw_bars(ax: Axes, present: list[Protocol], values: list[float], value_format: str) -> None:
-    positions: list[int] = list(range(len(present)))
-    ax.bar(positions, values, width=0.55, color=[p.color for p in present], edgecolor="white", linewidth=2)
-    ax.set_xticks(positions, [p.label.replace(" (", "\n(") for p in present])
-    finite: list[float] = [v for v in values if not math.isnan(v)]
-    top: float = max(finite + [0.0])
-    for x, value in zip(positions, values):
-        if not math.isnan(value):
-            ax.text(x, value + top * 0.02, value_format.format(value), ha="center", va="bottom", fontsize=9, color=INK)
-    ax.set_ylim(0, top * 1.18 if top > 0 else 1.0)
 
-def save(fig: Figure, output: str, name: str) -> str:
-    fig.tight_layout()
+def draw_bars(axes: Axes, present: list[Protocol], values: list[float], value_format: str) -> None:
+    positions: list[int] = list(range(len(present)))
+    colors: list[str] = [protocol.color for protocol in present]
+    axes.bar(positions, values, width=BAR_WIDTH, color=colors, edgecolor="white", linewidth=BAR_EDGE_WIDTH)
+    axes.set_xticks(positions, [protocol.label.replace(" (", "\n(") for protocol in present])
+    finite: list[float] = [value for value in values if not math.isnan(value)]
+    top: float = max(finite + [0.0])
+    for position, value in zip(positions, values):
+        if not math.isnan(value):
+            axes.text(position, value + top * VALUE_LABEL_OFFSET, value_format.format(value),
+                      ha="center", va="bottom", fontsize=LABEL_FONT_SIZE, color=INK)
+    axes.set_ylim(0, top * Y_HEADROOM if top > 0 else 1.0)
+
+
+def save(figure: Figure, output: str, name: str) -> str:
+    figure.tight_layout()
     path: str = os.path.join(output, name)
-    fig.savefig(path)
-    plt.close(fig)
+    figure.savefig(path)
+    plt.close(figure)
     return path
 
+
 def latency_figure(rtt: dict[str, list[float]], output: str) -> str | None:
-    present: list[Protocol] = [p for p in PROTOCOLS if p.key in rtt]
+    present: list[Protocol] = present_protocols(rtt)
     if not present:
         return None
-    fig, ax = plt.subplots(figsize=(6.4, 3.6), dpi=DPI)
-    data: list[list[float]] = [rtt[p.key] for p in present]
-    boxes = ax.boxplot(
-        data, widths=0.5, patch_artist=True, showfliers=True,
+    figure, axes = plt.subplots(figsize=LATENCY_FIGURE_SIZE, dpi=DPI)
+    data: list[list[float]] = [rtt[protocol.key] for protocol in present]
+    boxes = axes.boxplot(
+        data, widths=BOX_WIDTH, patch_artist=True, showfliers=True,
         medianprops={"color": INK, "linewidth": 1.5},
         whiskerprops={"color": MUTED, "linewidth": 1}, capprops={"color": MUTED, "linewidth": 1},
         flierprops={"marker": "o", "markersize": 3, "markerfacecolor": MUTED, "markeredgecolor": "none", "alpha": 0.6},
@@ -113,49 +144,57 @@ def latency_figure(rtt: dict[str, list[float]], output: str) -> str | None:
     for patch, protocol in zip(boxes["boxes"], present):
         patch.set_facecolor(protocol.color)
         patch.set_edgecolor("white")
-        patch.set_linewidth(2)
-    ax.set_xticks(list(range(1, len(present) + 1)), [p.label for p in present])
+        patch.set_linewidth(BAR_EDGE_WIDTH)
+    axes.set_xticks(list(range(1, len(present) + 1)), [protocol.label for protocol in present])
     for position, values in enumerate(data, start=1):
         median: float = statistics.median(values)
-        ax.text(position + 0.3, median, f"{median:.2f}", va="center", fontsize=8, color=INK_SECONDARY)
-    style_axes(ax, "Round-trip latency (RTT) per protocol", "ms")
-    return save(fig, output, "fig_latency.png")
+        axes.text(position + MEDIAN_LABEL_OFFSET, median, f"{median:.2f}",
+                  va="center", fontsize=NOTE_FONT_SIZE, color=INK_SECONDARY)
+    style_axes(axes, "Round-trip latency (RTT) per protocol", "ms")
+    return save(figure, output, "fig_latency.png")
+
 
 def size_throughput_figure(summary: dict[str, Row], output: str) -> str | None:
-    present: list[Protocol] = [p for p in PROTOCOLS if p.key in summary]
+    present: list[Protocol] = present_protocols(summary)
     if not present:
         return None
-    fig, (left, right) = plt.subplots(1, 2, figsize=(7.2, 3.4), dpi=DPI)
-    draw_bars(left, present, [number(summary[p.key], "frame_bytes") for p in present], "{:.1f}")
+    figure, (left, right) = plt.subplots(1, 2, figsize=DOUBLE_FIGURE_SIZE, dpi=DPI)
+    draw_bars(left, present, [number(summary[protocol.key], "frame_bytes") for protocol in present], "{:.1f}")
     style_axes(left, "Bytes per frame", "bytes")
-    draw_bars(right, present, [number(summary[p.key], "max_frames_per_s") for p in present], "{:.0f}")
+    draw_bars(right, present, [number(summary[protocol.key], "max_frames_per_s") for protocol in present], "{:.0f}")
     style_axes(right, "Frames per second (maximum)", "frames/s")
-    return save(fig, output, "fig_size_throughput.png")
+    return save(figure, output, "fig_size_throughput.png")
+
+
+def undetected_share(row: Row) -> float:
+    undetected: float = number(row, "undetected_errors")
+    detected: float = number(row, "detected_errors")
+    total: float = undetected + detected
+    return PERCENT * undetected / total if total > 0 else 0.0
+
 
 def robustness_figure(summary: dict[str, Row], output: str) -> str | None:
-    present: list[Protocol] = [p for p in PROTOCOLS if p.key in summary and number(summary[p.key], "ber") > 0]
+    present: list[Protocol] = [protocol for protocol in present_protocols(summary)
+                               if number(summary[protocol.key], "ber") > 0]
     if not present:
         return None
-    shares: list[float] = []
-    for protocol in present:
-        undetected: float = number(summary[protocol.key], "undetected_errors")
-        detected: float = number(summary[protocol.key], "detected_errors")
-        total: float = undetected + detected
-        shares.append(100.0 * undetected / total if total > 0 else 0.0)
-    fig, ax = plt.subplots(figsize=(6.4, 3.4), dpi=DPI)
-    draw_bars(ax, present, shares, "{:.2f} %")
+    shares: list[float] = [undetected_share(summary[protocol.key]) for protocol in present]
+    figure, axes = plt.subplots(figsize=SINGLE_FIGURE_SIZE, dpi=DPI)
+    draw_bars(axes, present, shares, "{:.2f} %")
     ber: float = number(summary[present[0].key], "ber")
-    style_axes(ax, f"Undetected errors (injected BER = {ber:g})", "% of corrupted frames accepted")
-    return save(fig, output, "fig_robustness.png")
+    style_axes(axes, f"Undetected errors (injected BER = {ber:g})", "% of corrupted frames accepted")
+    return save(figure, output, "fig_robustness.png")
+
 
 def deserialization_figure(summary: dict[str, Row], output: str) -> str | None:
-    present: list[Protocol] = [p for p in PROTOCOLS if p.key in summary]
+    present: list[Protocol] = present_protocols(summary)
     if not present:
         return None
-    fig, ax = plt.subplots(figsize=(6.4, 3.4), dpi=DPI)
-    draw_bars(ax, present, [number(summary[p.key], "deserialization_us") for p in present], "{:.2f}")
-    style_axes(ax, "Deserialization time in Unity per frame", "µs")
-    return save(fig, output, "fig_deserialization.png")
+    figure, axes = plt.subplots(figsize=SINGLE_FIGURE_SIZE, dpi=DPI)
+    draw_bars(axes, present, [number(summary[protocol.key], "deserialization_us") for protocol in present], "{:.2f}")
+    style_axes(axes, "Deserialization time in Unity per frame", "µs")
+    return save(figure, output, "fig_deserialization.png")
+
 
 TABLE_ROWS: Final[list[tuple[str, str, str]]] = [
     ("Value test", "value_test", "{}"),
@@ -173,6 +212,7 @@ TABLE_ROWS: Final[list[tuple[str, str, str]]] = [
     ("UNDETECTED errors (robustness)", "undetected_errors", "{:.0f}"),
 ]
 
+
 def format_cell(raw: str, value_format: str) -> str:
     if value_format == "{}":
         return raw
@@ -181,16 +221,17 @@ def format_cell(raw: str, value_format: str) -> str:
     except ValueError:
         return raw
 
+
 def comparison_table(summary: dict[str, Row], output: str) -> str | None:
-    present: list[Protocol] = [p for p in PROTOCOLS if p.key in summary]
+    present: list[Protocol] = present_protocols(summary)
     if not present:
         return None
     lines: list[str] = [
-        "| Metric | " + " | ".join(p.label for p in present) + " |",
+        "| Metric | " + " | ".join(protocol.label for protocol in present) + " |",
         "|---|" + "---:|" * len(present),
     ]
     for name, field, value_format in TABLE_ROWS:
-        cells: list[str] = [format_cell(summary[p.key].get(field, ""), value_format) for p in present]
+        cells: list[str] = [format_cell(summary[protocol.key].get(field, ""), value_format) for protocol in present]
         lines.append(f"| {name} | " + " | ".join(cells) + " |")
     text: str = "\n".join(lines) + "\n"
     path: str = os.path.join(output, "comparison_table.md")
@@ -199,14 +240,19 @@ def comparison_table(summary: dict[str, Row], output: str) -> str | None:
     print(text)
     return path
 
-def main() -> None:
-    root: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+
+def parse_arguments(root: str) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Builds the comparison table and the report figures.")
     parser.add_argument("--measurements", default=os.path.join(root, "Measurements"))
     parser.add_argument("--output", default=os.path.join(root, "Informe", "figures"))
-    args: argparse.Namespace = parser.parse_args()
-    measurements: str = args.measurements
-    output: str = args.output
+    return parser.parse_args()
+
+
+def main() -> None:
+    root: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    arguments: argparse.Namespace = parse_arguments(root)
+    measurements: str = arguments.measurements
+    output: str = arguments.output
     os.makedirs(output, exist_ok=True)
 
     plt.rcParams["font.family"] = ["Segoe UI", "DejaVu Sans", "sans-serif"]
@@ -226,6 +272,7 @@ def main() -> None:
     for path in generated:
         if path is not None:
             print("Generated:", path)
+
 
 if __name__ == "__main__":
     main()

@@ -9,6 +9,9 @@ namespace PhysicalDigital.Game
         private const float LitScaleBoost = 0.07f;
         private const float GlowMaxAlpha = 0.6f;
         private const float ErrorBlinkSpeed = 8f;
+        private const float DimAmount = 0.72f;
+        private const float LitAmount = 0.22f;
+        private const float ErrorBlendMax = 0.75f;
 
         private static readonly Color ErrorColor = new Color(1f, 0.18f, 0.2f);
         private static readonly Color DimTarget = new Color(0.06f, 0.07f, 0.11f);
@@ -22,8 +25,6 @@ namespace PhysicalDigital.Game
         private bool held;
         private float idle;
         private float intensity;
-
-        public Color BaseColor => baseColor;
 
         public static PadView Create(Transform parent, string name, Vector3 position, float size, Color color)
         {
@@ -79,12 +80,12 @@ namespace PhysicalDigital.Game
 
         private void Apply()
         {
-            Color dim = Color.Lerp(baseColor, DimTarget, 0.72f);
-            Color lit = Color.Lerp(baseColor, Color.white, 0.22f);
+            Color dim = Color.Lerp(baseColor, DimTarget, DimAmount);
+            Color lit = Color.Lerp(baseColor, Color.white, LitAmount);
             Color color = Color.Lerp(dim, lit, intensity);
             if (errorTimer > 0f)
             {
-                color = Color.Lerp(color, ErrorColor, 0.75f * Mathf.PingPong(Time.time * ErrorBlinkSpeed, 1f));
+                color = Color.Lerp(color, ErrorColor, ErrorBlendMax * Mathf.PingPong(Time.time * ErrorBlinkSpeed, 1f));
             }
             body.color = color;
             glow.color = new Color(baseColor.r, baseColor.g, baseColor.b, GlowMaxAlpha * intensity);

@@ -1,3 +1,11 @@
+#include "CsvEncoder.h"
+#include "JsonEncoder.h"
+#include "BinaryEncoder.h"
+
+enum class Protocol : uint8_t { Csv, Json, Binary };
+
+constexpr Protocol ACTIVE_PROTOCOL = Protocol::Csv;
+
 constexpr uint8_t BUTTON_COUNT = 4;
 constexpr uint8_t BUTTON_PINS[BUTTON_COUNT] = {7, 6, 4, 5};
 constexpr uint8_t POT_PIN = A0;
@@ -5,6 +13,9 @@ constexpr uint32_t BAUD_RATE = 115200UL;
 constexpr uint32_t DEBOUNCE_MS = 20UL;
 constexpr uint32_t DEFAULT_SEND_PERIOD_MS = 20UL;
 constexpr uint8_t COMMAND_BUFFER_SIZE = 12;
+constexpr uint32_t MAX_PING_ID = 65535UL;
+constexpr uint32_t MAX_SEND_PERIOD_MS = 1000UL;
+constexpr uint32_t DECIMAL_BASE = 10UL;
 
 constexpr uint16_t TEST_SEQ = 0x7D7EU;
 constexpr uint8_t TEST_BUTTONS = 0x0AU;
@@ -21,25 +32,20 @@ uint32_t lastSendMs = 0;
 bool continuousTest = false;
 char commandBuffer[COMMAND_BUFFER_SIZE];
 uint8_t commandLength = 0;
-
-unsigned int buttonBit(const uint8_t buttons, const uint8_t index) {
-  return static_cast<unsigned int>((buttons >> index) & 0x01U);
-}
+bool commandOverflow = false;
 
 void sendPacket(const uint16_t seq, const uint8_t buttons, const uint16_t pot, const uint16_t echo) {
-  const uint8_t checksum = static_cast<uint8_t>(
-      (seq & 0xFFU) + (seq >> 8) + buttons +
-      (pot & 0xFFU) + (pot >> 8) +
-      (echo & 0xFFU) + (echo >> 8));
-  char line[72];
-  snprintf(line, sizeof(line),
-           "{\"seq\":%u,\"b\":[%u,%u,%u,%u],\"pot\":%u,\"echo\":%u,\"ck\":%u}\n",
-           static_cast<unsigned int>(seq),
-           buttonBit(buttons, 0), buttonBit(buttons, 1),
-           buttonBit(buttons, 2), buttonBit(buttons, 3),
-           static_cast<unsigned int>(pot), static_cast<unsigned int>(echo),
-           static_cast<unsigned int>(checksum));
-  Serial.write(line);
+  switch (ACTIVE_PROTOCOL) {
+    case Protocol::Csv:
+      sendCsvPacket(seq, buttons, pot, echo);
+      break;
+    case Protocol::Json:
+      sendJsonPacket(seq, buttons, pot, echo);
+      break;
+    case Protocol::Binary:
+      sendBinaryPacket(seq, buttons, pot, echo);
+      break;
+  }
 }
 
 void setup() {
@@ -90,38 +96,73 @@ bool readButtons() {
 
 void processCommands() {
   while (Serial.available() > 0) {
-    const int raw = Serial.read();
-    if (raw < 0) {
+    const int received = Serial.read();
+    if (received < 0) {
       break;
     }
-    const char c = static_cast<char>(raw);
-    if (c == '\n' || c == '\r') {
-      if (commandLength > 0U) {
-        commandBuffer[commandLength] = '\0';
-        executeCommand(commandBuffer);
-        commandLength = 0;
-      }
+    const char character = static_cast<char>(received);
+    if (character == '\n' || character == '\r') {
+      finishCommand();
     } else if (commandLength < COMMAND_BUFFER_SIZE - 1U) {
-      commandBuffer[commandLength] = c;
+      commandBuffer[commandLength] = character;
       ++commandLength;
+    } else {
+      commandOverflow = true;
     }
   }
 }
 
+void finishCommand() {
+  if (commandLength > 0U && !commandOverflow) {
+    commandBuffer[commandLength] = '\0';
+    executeCommand(commandBuffer);
+  }
+  commandLength = 0;
+  commandOverflow = false;
+}
+
+bool parseUnsigned(const char* text, const uint32_t maxValue, uint32_t& value) {
+  if (*text == '\0') {
+    return false;
+  }
+  uint32_t result = 0;
+  for (const char* digit = text; *digit != '\0'; ++digit) {
+    if (*digit < '0' || *digit > '9') {
+      return false;
+    }
+    result = result * DECIMAL_BASE + static_cast<uint32_t>(*digit - '0');
+    if (result > maxValue) {
+      return false;
+    }
+  }
+  value = result;
+  return true;
+}
+
 void executeCommand(const char* command) {
+  const char* argument = command + 1;
+  uint32_t value = 0;
   switch (command[0]) {
     case 'P':
-      echoId = static_cast<uint16_t>(strtoul(command + 1, nullptr, 10));
-      sendState();
+      if (parseUnsigned(argument, MAX_PING_ID, value)) {
+        echoId = static_cast<uint16_t>(value);
+        sendState();
+      }
       break;
     case 'T':
-      sendPacket(TEST_SEQ, TEST_BUTTONS, TEST_POT, TEST_ECHO);
+      if (*argument == '\0') {
+        sendPacket(TEST_SEQ, TEST_BUTTONS, TEST_POT, TEST_ECHO);
+      }
       break;
     case 'R':
-      sendPeriodMs = static_cast<uint32_t>(strtoul(command + 1, nullptr, 10));
+      if (parseUnsigned(argument, MAX_SEND_PERIOD_MS, value)) {
+        sendPeriodMs = value;
+      }
       break;
     case 'X':
-      continuousTest = (command[1] == '1');
+      if (parseUnsigned(argument, 1UL, value)) {
+        continuousTest = (value == 1UL);
+      }
       break;
     default:
       break;
