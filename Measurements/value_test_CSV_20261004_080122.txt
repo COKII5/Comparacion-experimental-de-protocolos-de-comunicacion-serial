@@ -1,0 +1,4 @@
+Protocol: CSV
+Date: 2026-10-04 08:01:22
+Expected: seq=32126 b=[0,1,0,1] pot=638 echo=125
+Result: FAIL (no valid frame with the test value within 1,5 s)

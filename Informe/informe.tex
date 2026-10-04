@@ -1,0 +1,431 @@
+\documentclass[journal]{IEEEtran}
+\hyphenation{op-tical net-works semi-conduc-tor}
+\usepackage[T1]{fontenc}
+% es-noshorthands: evita que " < > se vuelvan comandos (necesario para las tramas JSON y P<id>).
+% es-tabla: los cuadros se titulan "Tabla" en lugar de "Cuadro".
+\usepackage[spanish,es-noshorthands,es-tabla]{babel}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{array}
+\usepackage{hyperref}
+
+% Marca visible para lo que depende de las mediciones o de los datos del grupo.
+\newcommand{\completar}[1]{\textbf{[COMPLETAR: #1]}}
+% Inserta la imagen si ya se subió a Overleaf; si no, deja un recuadro para que el documento compile.
+\newcommand{\insertfigure}[1]{%
+  \IfFileExists{#1}%
+    {\includegraphics[width=\columnwidth]{#1}}%
+    {\fbox{\parbox[c][3cm][c]{0.9\columnwidth}{\centering\small [COMPLETAR: subir \texttt{\detokenize{#1}}]}}}}
+
+\begin{document}
+\title{Comparación experimental de protocolos de comunicación serial Arduino--Unity para un juego de secuencias físico-digital}
+\author{\completar{Nombre~Apellido},~\completar{Nombre~Apellido}~y~\completar{Nombre~Apellido}% <-this % stops a space
+\thanks{Facultad de Ingeniería, Universidad de San Buenaventura, Bogotá, Colombia.}}
+
+% The paper headers
+\markboth{Universidad de San Buenaventura - Ingeniería Multimedia }%
+{\completar{Apellido} \MakeLowercase{\textit{et al.}}: Protocolos seriales Arduino--Unity}
+
+% make the title area
+\maketitle
+
+\begin{abstract}
+Se implementaron y compararon tres protocolos de comunicación serial entre un Arduino Uno y un simulador interactivo en Unity (S3, juego de secuencias): texto delimitado tipo CSV con checksum XOR, JSON con checksum de suma módulo 256 y tramas binarias con encabezado, longitud, CRC-16/CCITT y \emph{byte stuffing}. Los tres comparten el mismo firmware y el mismo canal de comandos; solo cambia la codificación de la trama. Con un procedimiento propio se midieron la latencia de ida y vuelta, el tamaño por trama, el throughput máximo, el costo de deserialización y la robustez ante errores de bit inyectados. \completar{2--3 frases con los resultados principales y la recomendación.}
+\end{abstract}
+
+\renewcommand{\IEEEkeywordsname}{Palabras clave}
+\begin{IEEEkeywords}
+Arduino, Unity, comunicación serial, framing, JSON, CRC, byte stuffing, latencia.
+\end{IEEEkeywords}
+
+{\renewcommand{\abstractname}{Abstract}
+\begin{abstract}
+Three serial communication protocols between an Arduino Uno and a Unity-based interactive simulator (S3, sequence game) were implemented and compared: delimited CSV text with an XOR checksum, JSON with a modulo-256 sum checksum, and binary frames with header, length, CRC-16/CCITT and byte stuffing. All three share the same firmware and command channel; only the frame encoding changes. A custom procedure measured round-trip latency, frame size, maximum throughput, deserialization cost and robustness against injected bit errors. \completar{2--3 sentences with the main results and the recommendation.}
+\end{abstract}}
+
+\renewcommand{\IEEEkeywordsname}{Keywords}
+\begin{IEEEkeywords}
+Arduino, Unity, serial communication, framing, JSON, CRC, byte stuffing, latency.
+\end{IEEEkeywords}
+
+% ---------------------------------------------------------------------------
+\section{Introducción}
+
+\IEEEPARstart{E}{l} vehículo del curso requiere que un controlador físico y un entorno digital intercambien información con baja latencia y sin errores. Este laboratorio aísla esa decisión: con el mismo circuito, de 4 pulsadores y 1 potenciómetro, y el mismo simulador, se comparan tres formas de empaquetar los datos en el canal serial. El objetivo es obtener criterios técnicos para elegir el protocolo de las siguientes etapas.
+
+% ---------------------------------------------------------------------------
+\section{Objetivos}
+
+\subsection{Objetivo general}
+Implementar y comparar experimentalmente distintos protocolos de comunicación entre un microcontrolador Arduino y un entorno interactivo en Unity, analizando el flujo de información entre el controlador físico y el simulador digital, para establecer criterios técnicos de selección del protocolo de transmisión de datos.
+
+\subsection{Objetivos específicos}
+\begin{itemize}
+    \item Diseñar e implementar un circuito con Arduino que capture entradas digitales y analógicas.
+    \item Investigar y aplicar estándares de construcción de paquetes (\emph{framing}), representación JSON y métodos de verificación de integridad.
+    \item Desarrollar tres implementaciones de protocolo serial entre Arduino y Unity, justificadas desde el marco teórico.
+    \item Conectar cada implementación con el simulador asignado (S3) y evaluar su comportamiento en uso real.
+    \item Comparar cuantitativa y cualitativamente las implementaciones en latencia, legibilidad, tamaño, throughput, costo de deserialización y robustez.
+\end{itemize}
+
+% ---------------------------------------------------------------------------
+\section{Marco teórico}
+
+\subsection{Construcción de paquetes (framing)}
+Un enlace serial UART entrega un flujo continuo de bytes, sin noción de mensaje. El \emph{framing} define dónde empieza y dónde termina cada mensaje \cite{tanenbaum}. Hay dos estrategias básicas:
+
+\begin{itemize}
+    \item \textbf{Por delimitador.} Un byte o carácter reservado marca el inicio o el fin de la trama; por ejemplo, \texttt{\textbackslash n} en protocolos de texto como NMEA 0183 \cite{nmea}, o el byte \emph{flag} \texttt{0x7E} en HDLC/PPP \cite{rfc1662}. Es simple y permite resincronizar en el siguiente delimitador, pero exige que el delimitador nunca aparezca dentro del dato.
+    \item \textbf{Por longitud.} Un encabezado indica cuántos bytes siguen. Permite datos arbitrarios, pero si se corrompe el campo de longitud el receptor pierde la sincronía; por eso se combina con un marcador de inicio y un código de verificación.
+\end{itemize}
+
+El \textbf{encabezado} (\emph{header}) agrupa los metadatos de la trama (marcador de inicio, tipo de mensaje y longitud), de modo que el receptor puede validarla antes de interpretar el contenido.
+
+Cuando los datos son binarios, cualquier valor puede coincidir con el delimitador. Las técnicas para evitarlo son:
+\begin{itemize}
+    \item \textbf{Byte stuffing o escaping.} HDLC/PPP reemplaza cada \texttt{0x7E} o \texttt{0x7D} del contenido por \texttt{0x7D} seguido del byte $\oplus$\,\texttt{0x20} \cite{rfc1662}. SLIP aplica la misma idea con \texttt{0xC0}/\texttt{0xDB} \cite{rfc1055}. El costo es una sobrecarga variable que, en el peor caso, duplica el tamaño de la trama.
+    \item \textbf{COBS} (\emph{Consistent Overhead Byte Stuffing}). Elimina un byte reservado con una sobrecarga acotada de 1 byte cada 254 \cite{cobs}.
+    \item En protocolos de texto, el problema se evita restringiendo el alfabeto (dígitos y separadores), de modo que el delimitador \texttt{\textbackslash n} nunca forma parte del dato.
+\end{itemize}
+
+\subsection{JSON y su deserialización en C\#/Unity}
+JSON es un formato de texto para intercambio de datos, estandarizado en RFC 8259 y ECMA-404 \cite{rfc8259}, \cite{ecma404}. Representa objetos (pares clave--valor), arreglos, números, cadenas, booleanos y \texttt{null}. Es autodescriptivo, legible por personas y tiene soporte universal; su desventaja es la redundancia, porque las claves viajan en cada mensaje y los números se codifican como texto decimal.
+
+En Unity hay dos opciones habituales:
+\begin{itemize}
+    \item \textbf{\texttt{JsonUtility}} \cite{unityjson}, integrado en el motor y orientado a rendimiento y bajo uso de memoria. Solo serializa campos públicos o con \texttt{[SerializeField]} de clases y structs marcados con \texttt{[Serializable]}, no propiedades; no admite diccionarios, tipos polimórficos ni arreglos o primitivos como raíz del documento, y no distingue un campo ausente de uno con valor por defecto.
+    \item \textbf{Newtonsoft Json.NET} \cite{newtonsoft} (paquete \texttt{com.unity.nuget.newtonsoft-json}). Admite propiedades, diccionarios, polimorfismo, atributos de mapeo y un modelo dinámico (\texttt{JObject}); a cambio, hace más asignaciones de memoria, es más lento por mensaje y en compilaciones IL2CPP/AOT puede requerir configuración adicional para la reflexión.
+\end{itemize}
+
+\subsection{Métodos de comprobación de integridad}
+La Tabla~\ref{tab:integridad} resume los métodos considerados. Un CRC trata la trama como un polinomio sobre GF(2) y transmite el residuo de dividirlo por un polinomio generador \cite{peterson}, \cite{williams}. Maxino y Koopman muestran que los checksums simples son claramente más débiles que un CRC del mismo tamaño en redes embebidas \cite{maxino}, y Koopman y Chakravarty estudian cómo elegir el polinomio según la longitud del mensaje \cite{koopman}.
+
+\begin{table*}[!t]
+\renewcommand{\arraystretch}{1.25}
+\caption{Métodos de comprobación de integridad}
+\label{tab:integridad}
+\centering
+\footnotesize
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{5.6cm}>{\raggedright\arraybackslash}p{4.4cm}>{\raggedright\arraybackslash}p{3.6cm}}
+\hline
+\textbf{Método} & \textbf{Qué detecta} & \textbf{Qué no detecta} & \textbf{Costo} \\
+\hline
+Bit de paridad & Cualquier número impar de bits invertidos & Errores con número par de bits & 1 bit por byte (UART con paridad) \\
+Checksum XOR de 8 bits (NMEA 0183 \cite{nmea}) & Errores en una sola posición de bit & Dos inversiones en la misma posición de bit de bytes distintos se cancelan; reordenamientos & 1 operación por byte \\
+Suma módulo 256 & Algo mejor que XOR ante errores de varios bits, por el acarreo & Reordenamientos de bytes; errores que se compensan & 1 operación por byte \\
+CRC-16/CCITT ($x^{16}+x^{12}+x^{5}+1$) \cite{peterson}, \cite{williams} & Todos los errores de 1 y 2 bits en tramas cortas, todos los de número impar de bits (factor $x+1$) y todas las ráfagas de hasta 16 bits & Un error aleatorio pasa con probabilidad $\approx 2^{-16}$ & 8 desplazamientos y XOR por byte, o 1 consulta a una tabla de 256 entradas \\
+\hline
+\end{tabular}
+\end{table*}
+
+% ---------------------------------------------------------------------------
+\section{Metodología y desarrollo}
+
+\subsection{Circuito}
+Se usó un Arduino Uno R3 (Fig.~\ref{fig:circuito}) con las siguientes conexiones:
+\begin{itemize}
+    \item \textbf{Pulsadores} B1 en D7, B2 en D6, B3 en D4 y B4 en D5, cada uno entre el pin y GND, con la resistencia interna \texttt{INPUT\_PULLUP}; presionado equivale a \texttt{LOW}.
+    \item \textbf{Potenciómetro de 1\,k$\Omega$} con los extremos a 5\,V y GND, y el cursor en A0 (ADC de 10 bits, 0 a 1023).
+\end{itemize}
+El firmware aplica un antirrebote por tiempo de 20\,ms y no usa \texttt{delay()} en el \texttt{loop()}: la temporización se hace con \texttt{millis()} para no bloquear el puerto serial. Envía una trama cada 20\,ms (50\,Hz) y además de inmediato ante cualquier cambio de pulsador. El sketch \texttt{CircuitTest} verifica el montaje imprimiendo el estado en forma legible.
+
+\begin{figure}[!t]
+    \centering
+    \insertfigure{circuito.jpg}
+    \caption{Montaje del circuito: pulsadores B1--B4 en D7, D6, D4 y D5, y potenciómetro en A0.}
+    \label{fig:circuito}
+\end{figure}
+
+\subsection{Datos transmitidos}
+Los tres protocolos transportan el mismo estado canónico de 7 bytes (Tabla~\ref{tab:estado}). Unity controla el Arduino con comandos de texto comunes a los tres sketches (Tabla~\ref{tab:comandos}).
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.2}
+\caption{Estado transmitido (7 bytes útiles)}
+\label{tab:estado}
+\centering
+\footnotesize
+\begin{tabular}{l l >{\raggedright\arraybackslash}p{4.2cm}}
+\hline
+\textbf{Campo} & \textbf{Tipo} & \textbf{Uso} \\
+\hline
+\texttt{seq} & uint16 & Contador de paquetes; detecta pérdidas \\
+\texttt{buttons} & 4 bits & Pulsadores B1 a B4 \\
+\texttt{pot} & uint16 & Potenciómetro (0--1023) \\
+\texttt{echo} & uint16 & Último id de ping recibido; permite medir el RTT \\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.2}
+\caption{Comandos de Unity hacia el Arduino}
+\label{tab:comandos}
+\centering
+\footnotesize
+\begin{tabular}{l >{\raggedright\arraybackslash}p{5.6cm}}
+\hline
+\textbf{Comando} & \textbf{Efecto} \\
+\hline
+\texttt{P<id>} & Ping: el Arduino responde de inmediato con \texttt{echo = id} \\
+\texttt{T} & Envía el valor de prueba \\
+\texttt{R<ms>} & Cambia el periodo de envío (\texttt{R0}: sin pausa) \\
+\texttt{X1} / \texttt{X0} & Activa o desactiva el envío continuo del valor de prueba \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Protocolos implementados y justificación}
+La Tabla~\ref{tab:protocolos} resume las tres implementaciones. Se eligieron para cubrir tres puntos distintos del espacio de diseño:
+\begin{itemize}
+    \item \textbf{CSV} es el extremo legible y mínimo. El framing es por delimitador \texttt{\textbackslash n} y no necesita escaping, porque el alfabeto se restringe a dígitos, comas y \texttt{*}. La integridad usa un XOR de 8 bits en hexadecimal, al estilo NMEA \cite{nmea}.
+    \item \textbf{JSON} es el formato estructurado y extensible que se usa en la industria \cite{rfc8259}. JSON compacto no contiene saltos de línea, así que el delimitador \texttt{\textbackslash n} tampoco requiere escaping. La integridad usa una suma módulo 256 sobre los 7 bytes del estado canónico.
+    \item \textbf{Binario} es el extremo compacto y robusto, y el único que obliga a resolver el problema del escaping. Usa el marcador \texttt{0x7E}, longitud, tipo, los 7 bytes del estado y un CRC-16/CCITT-FALSE (polinomio \texttt{0x1021}, valor inicial \texttt{0xFFFF}); todo lo que sigue al marcador se escapa con el esquema HDLC \cite{rfc1662}.
+\end{itemize}
+Además, cada protocolo usa un método de integridad distinto (XOR, suma y CRC), de modo que la prueba de robustez contrasta directamente lo que predice el marco teórico.
+
+\begin{table*}[!t]
+\renewcommand{\arraystretch}{1.25}
+\caption{Protocolos implementados}
+\label{tab:protocolos}
+\centering
+\footnotesize
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}p{4.4cm}>{\raggedright\arraybackslash}p{4.6cm}>{\raggedright\arraybackslash}p{4.6cm}}
+\hline
+ & \textbf{P1 -- CSV} & \textbf{P2 -- JSON} & \textbf{P3 -- Binario} \\
+\hline
+Trama & \texttt{seq,b1,b2,b3,b4,pot,echo*CS\textbackslash n} & \texttt{\{"seq","b","pot","echo","ck"\}\textbackslash n} & \texttt{7E LEN TYPE datos(7) CRC16} \\
+Framing & Delimitador \texttt{\textbackslash n} & Delimitador \texttt{\textbackslash n} & Marcador \texttt{0x7E} + longitud \\
+Integridad & XOR 8 bits, en hexadecimal & Suma mód.\ 256 sobre el estado & CRC-16/CCITT-FALSE \\
+Escaping & No necesario (alfabeto restringido) & No necesario (JSON compacto) & HDLC: \texttt{0x7E}/\texttt{0x7D} $\rightarrow$ \texttt{0x7D}, $b \oplus$\,\texttt{0x20} \\
+Deserialización en Unity & Manual (\texttt{Split} + validación de dígitos) & \texttt{JsonUtility} o Newtonsoft & Máquina de estados byte a byte \\
+\hline
+\end{tabular}
+\end{table*}
+
+En Unity, un hilo dedicado lee el puerto con \texttt{System.IO.Ports.SerialPort} y alimenta el decodificador byte a byte, de modo que nunca se asume que una trama llega completa en una sola lectura. Ese hilo marca el tiempo de llegada de cada trama y la deposita en una cola; el hilo principal consume \emph{todos} los estados recibidos en cada frame. Las desconexiones del puerto y las tramas corruptas se capturan y se cuentan sin detener el simulador.
+
+\subsection{Procedimiento de medición}
+
+\subsubsection{Condiciones fijas}
+Arduino Uno R3 (USB mediante ATmega16U2), 115200 baudios en 8N1 (10 bits por byte), envío cada 20\,ms, antirrebote de 20\,ms y Unity 6000.0.82f1 en modo Play del editor. Equipo de medición: \completar{CPU, sistema operativo y puerto USB usado, sin hub}. Las tres implementaciones comparten exactamente el mismo firmware salvo la función \texttt{sendPacket()} y el mismo canal de comandos, de modo que cualquier diferencia medida se debe solo a la codificación de la trama.
+
+Para cada protocolo se carga su sketch, se cierra el Monitor Serial del IDE (ocupa el puerto), se conecta Unity al puerto COM y se espera a que la tasa ronde las 50 tramas/s sin errores. La rutina automática \emph{Full run} ejecuta las pruebas 1 a 4 en unos 45\,s y agrega una fila a \texttt{Measurements/summary.csv}. Se repite 3 veces por protocolo y, para JSON, además con el deserializador Newtonsoft. Durante las pruebas automáticas no se tocan los controles.
+
+\subsubsection{Prueba 1 -- valor (corrección)}
+Unity envía \texttt{T} y el Arduino responde con un valor fijo: \texttt{seq=32126}, \texttt{b=[0,1,0,1]}, \texttt{pot=638}, \texttt{echo=125}. Unity compara lo decodificado contra ese valor y guarda los bytes crudos. El valor se eligió para que el estado canónico (\texttt{7E 7D 0A 7E 02 7D 00}) contenga \texttt{0x7E} y \texttt{0x7D}, de modo que la prueba ejercita el byte stuffing.
+
+\subsubsection{Prueba 2 -- latencia de ida y vuelta (RTT)}
+Unity envía \texttt{P<id>} y registra la marca de tiempo con \texttt{Stopwatch} justo antes de escribir en el puerto. El Arduino copia el id en \texttt{echo} y responde de inmediato; el hilo lector marca el tiempo al terminar de decodificar la trama correspondiente. Se toman 500 muestras separadas por 20\,ms (timeout de 500\,ms) y se reportan media, mediana, percentil 95, mínimo, máximo y desviación estándar. El RTT se descompone como
+\begin{equation}
+RTT = t_{cmd} + t_{ard} + N \cdot t_{byte} + t_{USB} + t_{des},
+\label{eq:rtt}
+\end{equation}
+donde $N$ es el número de bytes de la respuesta, $t_{byte} = 10/115200 \approx 86{,}8\,\mu$s, $t_{USB}$ es la latencia del convertidor USB y del driver, y $t_{des}$ el tiempo de deserialización en Unity. Solo $N$ y $t_{des}$ cambian entre protocolos. En la misma ventana se registran los bytes promedio por trama, $t_{des}$ medido con \texttt{Stopwatch} y, como referencia, la latencia entre el hilo lector y \texttt{Update()}, que depende de los FPS y no del protocolo.
+
+\subsubsection{Prueba 3 -- throughput máximo}
+Unity envía \texttt{R0} y el Arduino transmite sin pausa durante 5\,s. Se cuentan las tramas válidas por segundo, los bytes por segundo, los paquetes perdidos (saltos en \texttt{seq}) y los errores. El resultado se compara con el máximo teórico
+\begin{equation}
+f_{max} = \frac{115200}{10 \cdot N}\ \text{tramas/s}.
+\label{eq:throughput}
+\end{equation}
+
+\subsubsection{Prueba 4 -- robustez (integridad)}
+Como el cable USB prácticamente no produce errores, se usa inyección de fallos por software: Unity envía \texttt{X1} y, durante 15\,s, invierte cada bit recibido con probabilidad $BER = 0{,}002$ antes de decodificarlo. Se cuentan las tramas \emph{detectadas} (descartadas por checksum, CRC o formato) y las \emph{no detectadas} (aceptadas con un valor distinto del valor de prueba). El indicador es
+\begin{equation}
+\%_{ND} = \frac{n_{ND}}{n_{ND} + n_{D}} \times 100.
+\label{eq:nodetectados}
+\end{equation}
+
+\subsubsection{Legibilidad}
+Como criterio objetivo se registran los bytes por trama, la sobrecarga
+\begin{equation}
+S = \frac{N - 7}{N},
+\label{eq:sobrecarga}
+\end{equation}
+y si la trama se puede leer en el Monitor Serial sin herramientas. Como criterio subjetivo, cada integrante califica de 1 a 5 qué tan fácil es leer el estado a simple vista, detectar un error durante la depuración, agregar un campo nuevo e implementar el decodificador; se reporta el promedio del grupo.
+
+\subsection{Simulador asignado: S3 -- Juego de secuencias}
+El juego muestra una secuencia creciente de pads de colores con tonos y el jugador debe repetirla con los pulsadores B1 a B4. El potenciómetro ajusta el tempo: el paso de la secuencia va de 0,90\,s a 0,22\,s y el tiempo para responder, de 5\,s a 2\,s. Tres características son relevantes para interpretar los resultados:
+\begin{enumerate}
+    \item \textbf{Cada pulsación es un evento discreto.} Perderla o duplicarla hace fallar la partida aunque el jugador haya acertado, así que importan la confiabilidad y la detección de pérdidas (\texttt{seq}) más que la tasa de envío. Por eso el Arduino envía apenas cambia un pulsador y Unity procesa todos los paquetes de cada frame para detectar cada flanco.
+    \item \textbf{La latencia de los pulsadores se percibe} en la respuesta visual y sonora, sobre todo con el tempo más rápido (0,22\,s por paso).
+    \item \textbf{El potenciómetro cambia lentamente}, así que tolera latencias moderadas.
+\end{enumerate}
+Por eso el S3 es menos exigente en ancho de banda que un simulador de control continuo, pero muy sensible a la pérdida de eventos.
+
+% ---------------------------------------------------------------------------
+\section{Resultados}
+
+\subsection{Prueba de valor}
+Los tres protocolos decodificaron el valor de prueba: \completar{OK/FALLA}. Las tramas recibidas coinciden con las esperadas (Tabla~\ref{tab:tramas}).
+
+\begin{table*}[!t]
+\renewcommand{\arraystretch}{1.25}
+\caption{Tramas del valor de prueba en el canal}
+\label{tab:tramas}
+\centering
+\footnotesize
+\begin{tabular}{l l r}
+\hline
+\textbf{Protocolo} & \textbf{Trama} & \textbf{Bytes} \\
+\hline
+CSV & \texttt{32126,0,1,0,1,638,125*3F\textbackslash n} & 25 \\
+JSON & \texttt{\{"seq":32126,"b":[0,1,0,1],"pot":638,"echo":125,"ck":2\}\textbackslash n} & 56 \\
+Binario & \texttt{7E 08 01 7D 5E 7D 5D 0A 7D 5E 02 7D 5D 00 8C 7D 5D} & 17 (12 sin escapes) \\
+\hline
+\end{tabular}
+\end{table*}
+
+\subsection{Comparación de protocolos}
+La Tabla~\ref{tab:comparacion} reúne las métricas. Los valores teóricos se calculan con (\ref{eq:throughput}) y (\ref{eq:sobrecarga}) a partir del tamaño de la trama del valor de prueba; los demás salen de \texttt{Tools/analyze\_measurements.py}.
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.2}
+\caption{Comparación de los tres protocolos}
+\label{tab:comparacion}
+\centering
+\footnotesize
+\begin{tabular}{l c c c}
+\hline
+\textbf{Métrica} & \textbf{CSV} & \textbf{JSON} & \textbf{Binario} \\
+\hline
+Bytes por trama (valor de prueba) & 25 & 56 & 17 \\
+Sobrecarga $S$ & 72,0\,\% & 87,5\,\% & 58,8\,\% \\
+$f_{max}$ teórico (tramas/s) & 460,8 & 205,7 & 677,6 \\
+$f_{max}$ medido (tramas/s) & \completar{} & \completar{} & \completar{} \\
+RTT medio (ms) & \completar{} & \completar{} & \completar{} \\
+RTT p95 (ms) & \completar{} & \completar{} & \completar{} \\
+$t_{des}$ ($\mu$s) & \completar{} & \completar{} & \completar{} \\
+Errores no detectados $\%_{ND}$ & \completar{} & \completar{} & \completar{} \\
+Paquetes perdidos & \completar{} & \completar{} & \completar{} \\
+Legible en Monitor Serial & Sí & Sí & No \\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{figure}[!t]
+    \centering
+    \insertfigure{fig_latency.png}
+    \caption{Distribución del RTT por protocolo.}
+    \label{fig:latencia}
+\end{figure}
+
+\begin{figure}[!t]
+    \centering
+    \insertfigure{fig_size_throughput.png}
+    \caption{Bytes por trama y tramas/s máximas medidas frente a las teóricas.}
+    \label{fig:throughput}
+\end{figure}
+
+\begin{figure}[!t]
+    \centering
+    \insertfigure{fig_robustness.png}
+    \caption{Porcentaje de errores no detectados con $BER = 0{,}002$.}
+    \label{fig:robustez}
+\end{figure}
+
+\begin{figure}[!t]
+    \centering
+    \insertfigure{fig_deserialization.png}
+    \caption{Costo de deserialización en Unity (JSON con \texttt{JsonUtility} y con Newtonsoft).}
+    \label{fig:deserializacion}
+\end{figure}
+
+\subsection{Legibilidad}
+La Tabla~\ref{tab:legibilidad} muestra el promedio de la calificación del grupo (1: muy difícil, 5: muy fácil).
+
+\begin{table}[!t]
+\renewcommand{\arraystretch}{1.2}
+\caption{Legibilidad percibida (promedio del grupo)}
+\label{tab:legibilidad}
+\centering
+\footnotesize
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.6cm} c c c}
+\hline
+\textbf{Aspecto} & \textbf{CSV} & \textbf{JSON} & \textbf{Binario} \\
+\hline
+Leer el estado a simple vista & \completar{} & \completar{} & \completar{} \\
+Detectar un error al depurar & \completar{} & \completar{} & \completar{} \\
+Agregar un campo nuevo & \completar{} & \completar{} & \completar{} \\
+Implementar el decodificador & \completar{} & \completar{} & \completar{} \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Funcionamiento en el simulador}
+\completar{Capturas (F12) y observaciones al jugar una partida del S3 con cada protocolo.}
+
+% ---------------------------------------------------------------------------
+\section{Análisis y discusión}
+
+\completar{Reemplazar cada punto con lo observado y contrastarlo con lo esperado.}
+
+\textbf{Tamaño y throughput.} Según (\ref{eq:throughput}), a 115200 baudios en 8N1 caben 11520 bytes/s, de modo que el binario (12 bytes sin escapes) debería permitir unas 2 veces más tramas que CSV y unas 5 veces más que JSON. \completar{Comparar con $f_{max}$ medido (Fig.~\ref{fig:throughput}).}
+
+\textbf{Latencia.} Por (\ref{eq:rtt}), la diferencia de RTT entre protocolos debería aproximarse a la diferencia de bytes de la respuesta multiplicada por 86,8\,$\mu$s, más la diferencia en $t_{des}$: unos 2,7\,ms entre JSON y CSV. \completar{Evaluar si es perceptible frente a un frame a 60\,FPS (16,7\,ms) y al tempo más rápido del S3 (Fig.~\ref{fig:latencia}).}
+
+\textbf{Deserialización.} CSV y binario usan un parser manual; JSON usa un serializador general basado en reflexión. \completar{Comparar \texttt{JsonUtility} con Newtonsoft (Fig.~\ref{fig:deserializacion}) como costo de la flexibilidad.}
+
+\textbf{Robustez.} El marco teórico predice este orden de errores no detectados: XOR $>$ suma módulo 256 $>$ CRC-16. La validación sintáctica de JSON también rechaza muchas tramas corruptas, independientemente del checksum. \completar{Discutir qué fracción se detectó por integridad y cuál por formato (Fig.~\ref{fig:robustez}).}
+
+\textbf{Legibilidad frente a eficiencia.} CSV y JSON se depuran a simple vista en el Monitor Serial; el binario requiere herramientas, como el visor de la última trama en Unity o \texttt{Tools/protocol\_reference.py}.
+
+\textbf{Pertinencia para el S3.} \completar{Verificar que no hubo pérdida de eventos con ningún protocolo (contador de \texttt{seq} durante el juego) y discutir si la diferencia de latencia afecta la jugabilidad.}
+
+% ---------------------------------------------------------------------------
+\section{Conclusiones}
+\completar{Redactar con base en los datos.} La recomendación debe justificar el protocolo para el Corte~2 (vehículo) y para el proyecto final, considerando la tasa de actualización que requiere el control del vehículo, el número de sensores y actuadores que se agregarán (extensibilidad del formato), la robustez ante el ruido eléctrico de los motores y el esfuerzo de depuración.
+
+Una alternativa defendible si los datos la respaldan es usar el binario con CRC-16 en operación y conservar un modo de texto (CSV) para depuración, ya que ambos comparten el mismo estado canónico.
+
+% ---------------------------------------------------------------------------
+\section{Repositorio}
+El código fuente está disponible en \completar{URL de GitHub}. Contiene \texttt{Arduino/} (un sketch por protocolo y la prueba del circuito), \texttt{Unity/} (proyecto del simulador S3), \texttt{Tools/} (codificador de referencia y análisis), \texttt{Measurements/} (datos crudos) e \texttt{Informe/} (este documento).
+
+% references section
+\begin{thebibliography}{13}
+
+\bibitem{tanenbaum}
+A.~S. Tanenbaum and D.~J. Wetherall, \emph{Computer Networks}, 5th~ed. Boston, MA, USA: Pearson, 2011, ch.~3.
+
+\bibitem{nmea}
+National Marine Electronics Association, \emph{NMEA 0183 Interface Standard}, ver.~4.11, 2018.
+
+\bibitem{rfc1662}
+W.~Simpson, Ed., ``PPP in HDLC-like framing,'' IETF RFC 1662, Jul. 1994.
+
+\bibitem{rfc1055}
+J.~Romkey, ``A nonstandard for transmission of IP datagrams over serial lines: SLIP,'' IETF RFC 1055, Jun. 1988.
+
+\bibitem{cobs}
+S.~Cheshire and M.~Baker, ``Consistent overhead byte stuffing,'' \emph{IEEE/ACM Trans. Netw.}, vol.~7, no.~2, pp.~159--172, Apr. 1999.
+
+\bibitem{rfc8259}
+T.~Bray, Ed., ``The JavaScript Object Notation (JSON) data interchange format,'' IETF RFC 8259, Dec. 2017.
+
+\bibitem{ecma404}
+Ecma International, \emph{ECMA-404: The JSON Data Interchange Syntax}, 2nd~ed., Dec. 2017.
+
+\bibitem{unityjson}
+Unity Technologies, ``JSON serialization,'' \emph{Unity Manual}, 2024. [Online]. Available: \url{https://docs.unity3d.com/Manual/json-serialization.html}
+
+\bibitem{newtonsoft}
+Newtonsoft, ``Json.NET documentation.'' [Online]. Available: \url{https://www.newtonsoft.com/json/help}
+
+\bibitem{peterson}
+W.~W. Peterson and D.~T. Brown, ``Cyclic codes for error detection,'' \emph{Proc. IRE}, vol.~49, no.~1, pp.~228--235, Jan. 1961.
+
+\bibitem{williams}
+R.~N. Williams, ``A painless guide to CRC error detection algorithms,'' 1993. [Online]. Available: \url{http://www.ross.net/crc/}
+
+\bibitem{maxino}
+T.~C. Maxino and P.~J. Koopman, ``The effectiveness of checksums for embedded control networks,'' \emph{IEEE Trans. Dependable Secure Comput.}, vol.~6, no.~1, pp.~59--72, Jan.--Mar. 2009.
+
+\bibitem{koopman}
+P.~Koopman and T.~Chakravarty, ``Cyclic redundancy code (CRC) polynomial selection for embedded networks,'' in \emph{Proc. Int. Conf. Dependable Syst. Netw. (DSN)}, 2004, pp.~145--154.
+
+\end{thebibliography}
+
+% that's all folks
+\end{document}

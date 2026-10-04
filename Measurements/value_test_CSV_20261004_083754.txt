@@ -1,0 +1,8 @@
+Protocol: CSV
+Date: 2026-10-04 08:37:54
+Expected: seq=32126 b=[0,1,0,1] pot=638 echo=125
+Decoded:  seq=32126 b=[0,1,0,1] pot=638 echo=125
+Result: OK (values match)
+Bytes on the wire: 25
+Hex:  33 32 31 32 36 2C 30 2C 31 2C 30 2C 31 2C 36 33 38 2C 31 32 35 2A 33 46 0A
+Text: 32126,0,1,0,1,638,125*3F
