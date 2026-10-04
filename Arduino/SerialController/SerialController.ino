@@ -4,7 +4,8 @@
 
 enum class Protocol : uint8_t { Csv, Json, Binary };
 
-constexpr Protocol ACTIVE_PROTOCOL = Protocol::Csv;
+constexpr Protocol DEFAULT_PROTOCOL = Protocol::Csv;
+constexpr uint32_t MAX_PROTOCOL_ID = static_cast<uint32_t>(Protocol::Binary);
 
 constexpr uint8_t BUTTON_COUNT = 4;
 constexpr uint8_t BUTTON_PINS[BUTTON_COUNT] = {7, 6, 4, 5};
@@ -33,9 +34,10 @@ bool continuousTest = false;
 char commandBuffer[COMMAND_BUFFER_SIZE];
 uint8_t commandLength = 0;
 bool commandOverflow = false;
+Protocol activeProtocol = DEFAULT_PROTOCOL;
 
 void sendPacket(const uint16_t seq, const uint8_t buttons, const uint16_t pot, const uint16_t echo) {
-  switch (ACTIVE_PROTOCOL) {
+  switch (activeProtocol) {
     case Protocol::Csv:
       sendCsvPacket(seq, buttons, pot, echo);
       break;
@@ -162,6 +164,11 @@ void executeCommand(const char* command) {
     case 'X':
       if (parseUnsigned(argument, 1UL, value)) {
         continuousTest = (value == 1UL);
+      }
+      break;
+    case 'M':
+      if (parseUnsigned(argument, MAX_PROTOCOL_ID, value)) {
+        activeProtocol = static_cast<Protocol>(value);
       }
       break;
     default:

@@ -171,6 +171,7 @@ Los tres protocolos transportan el mismo estado canónico de 7 bytes (Tabla~\ref
 \texttt{T} & Envía el valor de prueba \\
 \texttt{R<ms>} & Cambia el periodo de envío (\texttt{R0}: sin pausa) \\
 \texttt{X1} / \texttt{X0} & Activa o desactiva el envío continuo del valor de prueba \\
+\texttt{M<n>} & Selecciona el protocolo de salida (0: CSV, 1: JSON, 2: binario) \\
 \hline
 \end{tabular}
 \end{table}
@@ -208,9 +209,9 @@ En Unity, un hilo dedicado lee el puerto con \texttt{System.IO.Ports.SerialPort}
 \subsection{Procedimiento de medición}
 
 \subsubsection{Condiciones fijas}
-Arduino Uno R3 (USB mediante ATmega16U2), 115200 baudios en 8N1 (10 bits por byte), envío cada 20\,ms, antirrebote de 20\,ms y Unity 6000.0.82f1 en modo Play del editor. Equipo de medición: \completar{CPU, sistema operativo y puerto USB usado, sin hub}. Las tres implementaciones salen de un único sketch (\texttt{SerialController}) que solo cambia el codificador seleccionado con la constante \texttt{ACTIVE\_PROTOCOL}, y comparten el mismo canal de comandos, de modo que cualquier diferencia medida se debe solo a la codificación de la trama.
+Arduino Uno R3 (USB mediante ATmega16U2), 115200 baudios en 8N1 (10 bits por byte), envío cada 20\,ms, antirrebote de 20\,ms y Unity 6000.0.82f1 en modo Play del editor. Equipo de medición: \completar{CPU, sistema operativo y puerto USB usado, sin hub}. Las tres implementaciones salen de un único sketch (\texttt{SerialController}) que solo cambia el codificador activo, elegido en ejecución con el comando \texttt{M<n>}, y comparten el mismo canal de comandos, de modo que cualquier diferencia medida se debe solo a la codificación de la trama.
 
-Para cada protocolo se fija \texttt{ACTIVE\_PROTOCOL} en el sketch y se carga en el Arduino, se cierra el Monitor Serial del IDE (ocupa el puerto), se conecta Unity al puerto COM y se espera a que la tasa ronde las 50 tramas/s sin errores. La rutina automática \emph{Full run} ejecuta las pruebas 1 a 4 en unos 45\,s y agrega una fila a \texttt{Measurements/summary.csv}. Se repite 3 veces por protocolo y, para JSON, además con el deserializador Newtonsoft. Durante las pruebas automáticas no se tocan los controles.
+El sketch se carga una sola vez. Se cierra el Monitor Serial del IDE (ocupa el puerto), se conecta Unity al puerto COM y, para cada protocolo, se selecciona en la interfaz (Unity envía \texttt{M<n>} y reinicia los contadores) y se espera a que la tasa ronde las 50 tramas/s sin errores. La rutina automática \emph{Full run} ejecuta las pruebas 1 a 4 en unos 45\,s y agrega una fila a \texttt{Measurements/summary.csv}. Se repite 3 veces por protocolo y, para JSON, además con el deserializador Newtonsoft. Durante las pruebas automáticas no se tocan los controles.
 
 \subsubsection{Prueba 1 -- valor (corrección)}
 Unity envía \texttt{T} y el Arduino responde con un valor fijo: \texttt{seq=32126}, \texttt{b=[0,1,0,1]}, \texttt{pot=638}, \texttt{echo=125}. Unity compara lo decodificado contra ese valor y guarda los bytes crudos. El valor se eligió para que el estado canónico (\texttt{7E 7D 0A 7E 02 7D 00}) contenga \texttt{0x7E} y \texttt{0x7D}, de modo que la prueba ejercita el byte stuffing.

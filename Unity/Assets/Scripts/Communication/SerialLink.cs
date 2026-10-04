@@ -12,6 +12,9 @@ namespace PhysicalDigital.Communication
         private const int MaxInboxSize = 4096;
         private const int MinBaudRate = 300;
         private const string CommandTerminator = "\n";
+        private const string ProtocolCommand = "M";
+        private const float ProtocolSettleSeconds = 0.15f;
+        private const float NoDeadline = -1f;
 
         [Header("Port")]
         [Tooltip("Empty = on Connect, the highest-numbered available COM port is used.")]
@@ -21,7 +24,7 @@ namespace PhysicalDigital.Communication
         [Tooltip("The Uno resets when the port opens; commands are delayed by this many seconds.")]
         [SerializeField] private float bootDelay = 2f;
 
-        [Header("Protocol (must match ACTIVE_PROTOCOL on the Arduino)")]
+        [Header("Protocol (sent to the Arduino with the M command)")]
         [SerializeField] private ProtocolKind protocol = ProtocolKind.Csv;
         [SerializeField] private JsonBackend jsonBackend = JsonBackend.JsonUtility;
 
@@ -36,6 +39,8 @@ namespace PhysicalDigital.Communication
         private IProtocolDecoder decoder;
         private float openedAt;
         private string status = "Disconnected";
+        private bool protocolPending;
+        private float settleDeadline = NoDeadline;
 
         public string PortName
         {
@@ -48,9 +53,11 @@ namespace PhysicalDigital.Communication
         public JsonBackend JsonBackend => jsonBackend;
         public string Status => status;
         public bool IsOpen => connection.IsOpen;
-        public bool IsReady => connection.IsOpen && Time.realtimeSinceStartup - openedAt >= bootDelay;
+        public bool IsReady => IsBooted && !protocolPending && settleDeadline == NoDeadline;
         public string ProtocolLabel => DecoderFactory.Label(protocol, jsonBackend);
         public string ProtocolTag => ProtocolLabel.Replace(" (", "_").Replace(")", "");
+
+        private bool IsBooted => connection.IsOpen && Time.realtimeSinceStartup - openedAt >= bootDelay;
 
         public static string[] AvailablePorts()
         {
@@ -88,6 +95,7 @@ namespace PhysicalDigital.Communication
 
         private void Update()
         {
+            SyncProtocol();
             UpdateStatus();
             if (rates.Advance(Time.unscaledDeltaTime))
             {
@@ -109,12 +117,15 @@ namespace PhysicalDigital.Communication
                 return;
             }
             openedAt = Time.realtimeSinceStartup;
+            protocolPending = true;
         }
 
         public void Disconnect()
         {
             connection.Close();
             rates.Clear();
+            protocolPending = false;
+            settleDeadline = NoDeadline;
             status = "Disconnected";
         }
 
@@ -123,6 +134,7 @@ namespace PhysicalDigital.Communication
             protocol = kind;
             jsonBackend = backend;
             ResetSession();
+            protocolPending = connection.IsOpen;
         }
 
         public void ResetCounters()
@@ -247,9 +259,31 @@ namespace PhysicalDigital.Communication
                 Disconnect();
                 status = "Error: " + error;
             }
+            else if (IsReady)
+            {
+                status = $"Connected to {portName}";
+            }
+            else if (IsBooted)
+            {
+                status = $"Switching the Arduino to {ProtocolLabel}...";
+            }
             else if (connection.IsOpen)
             {
-                status = IsReady ? $"Connected to {portName}" : $"Opening {portName} (Arduino reset)...";
+                status = $"Opening {portName} (Arduino reset)...";
+            }
+        }
+
+        private void SyncProtocol()
+        {
+            if (protocolPending && IsBooted && SendCommand(ProtocolCommand + (int)protocol))
+            {
+                protocolPending = false;
+                settleDeadline = Time.realtimeSinceStartup + ProtocolSettleSeconds;
+            }
+            else if (settleDeadline != NoDeadline && Time.realtimeSinceStartup >= settleDeadline)
+            {
+                settleDeadline = NoDeadline;
+                ResetSession();
             }
         }
 

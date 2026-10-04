@@ -86,7 +86,7 @@ namespace PhysicalDigital.UI
 
         private void DrawProtocolSelector(HudTheme theme)
         {
-            GUILayout.Label("Protocol (must match ACTIVE_PROTOCOL on the Arduino)", theme.Small);
+            GUILayout.Label("Protocol (the Arduino switches automatically)", theme.Small);
             int selectedProtocol = GUILayout.Toolbar((int)link.Protocol, ProtocolNames, theme.Button, GUILayout.Height(ProtocolToolbarHeight));
             int selectedBackend = (int)link.JsonBackend;
             if (layoutShowsJsonBackend)
@@ -153,7 +153,7 @@ namespace PhysicalDigital.UI
 
             if (layoutShowsUnrecognizedWarning)
             {
-                theme.ColoredLabel($"No frames recognized. Is the Arduino set to {ProtocolNames[(int)link.Protocol]}?", HudTheme.Bad);
+                theme.ColoredLabel($"No {ProtocolNames[(int)link.Protocol]} frames recognized. Is SerialController uploaded?", HudTheme.Bad);
             }
         }
 
