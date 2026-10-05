@@ -1,0 +1,7 @@
+Protocol: Binary
+Date: 2026-10-04 19:20:03
+Expected: seq=32126 b=[0,1,0,1] pot=638 echo=125
+Decoded:  seq=32126 b=[0,1,0,1] pot=638 echo=125
+Result: OK (values match)
+Bytes on the wire: 17
+Hex:  7E 08 01 7D 5E 7D 5D 0A 7D 5E 02 7D 5D 00 8C 7D 5D

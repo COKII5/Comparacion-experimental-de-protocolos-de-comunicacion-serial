@@ -1,0 +1,4 @@
+date,protocol,deserializer,port,baud,value_test,rtt_n,rtt_timeouts,rtt_mean_ms,rtt_median_ms,rtt_p95_ms,rtt_min_ms,rtt_max_ms,rtt_std_ms,frame_bytes,deserialization_us,queue_latency_ms,max_frames_per_s,max_bytes_per_s,theoretical_frames_per_s,throughput_lost,throughput_errors,ber,accepted_frames,detected_errors,detected_by_integrity,undetected_errors,bits_flipped
+2026-10-04 19:12:05,CSV,manual,COM4,115200,OK,500,0,5.5840,5.7075,7.2961,3.2903,11.4786,1.1788,23.43,61.562,3.045,489.5,11746.1,480.0,0,0,0.002,4701,2268,1999,3,2754
+2026-10-04 19:18:21,JSON,JsonUtility,COM4,115200,OK,500,0,8.9650,8.8191,12.0672,6.5944,14.5232,1.5873,57.57,121.281,3.182,200.5,11749.3,196.7,0,0,0.002,1282,1821,90,0,2811
+2026-10-04 19:20:03,Binary,manual,COM4,115200,OK,500,0,4.1379,4.0678,6.0174,2.0768,7.1683,1.2249,12.03,0.914,3.079,969.1,11755.5,949.7,0,0,0.002,7886,2352,2103,0,2832

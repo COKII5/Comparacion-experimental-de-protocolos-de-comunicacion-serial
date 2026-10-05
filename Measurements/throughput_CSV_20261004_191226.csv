@@ -1,0 +1,2 @@
+seconds,frames,bytes,frames_per_s,bytes_per_s,theoretical_frames_per_s,lost,errors
+5.003,2449,58771,489.5,11746.1,480.0,0,0

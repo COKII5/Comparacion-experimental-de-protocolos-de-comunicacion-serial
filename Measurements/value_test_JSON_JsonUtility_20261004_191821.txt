@@ -1,0 +1,8 @@
+Protocol: JSON (JsonUtility)
+Date: 2026-10-04 19:18:21
+Expected: seq=32126 b=[0,1,0,1] pot=638 echo=125
+Decoded:  seq=32126 b=[0,1,0,1] pot=638 echo=125
+Result: OK (values match)
+Bytes on the wire: 56
+Hex:  7B 22 73 65 71 22 3A 33 32 31 32 36 2C 22 62 22 3A 5B 30 2C 31 2C 30 2C 31 5D 2C 22 70 6F 74 22 3A 36 33 38 2C 22 65 63 68 6F 22 3A 31 32 35 2C 22 63 6B 22 3A 32 7D 0A
+Text: {"seq":32126,"b":[0,1,0,1],"pot":638,"echo":125,"ck":2}
