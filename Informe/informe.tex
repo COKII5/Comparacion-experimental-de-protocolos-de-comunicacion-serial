@@ -11,12 +11,15 @@
 
 % Marca visible para lo que depende de las mediciones o de los datos del grupo.
 \newcommand{\completar}[1]{\textbf{[COMPLETAR: #1]}}
-% Todas las imágenes van en la carpeta figures/ de Overleaf, al lado de informe.tex (ver Informe/figures/ en el repositorio).
-% Inserta la imagen si ya se subió a Overleaf; si no, deja un recuadro para que el documento compile.
+% Las imágenes se buscan primero en la carpeta figures/ de Overleaf y, si no están ahí, junto a informe.tex.
+% La altura se limita para que una foto vertical no ocupe media página.
+% Si no se encuentran en ninguno de los dos sitios, deja un recuadro para que el documento compile.
 \newcommand{\insertfigurew}[2]{%
-  \IfFileExists{#1}%
-    {\includegraphics[width=#2]{#1}}%
-    {\fbox{\parbox[c][3cm][c]{0.9\linewidth}{\centering\small [COMPLETAR: subir \texttt{\detokenize{#1}}]}}}}
+  \IfFileExists{figures/#1}%
+    {\includegraphics[width=#2,height=0.28\textheight,keepaspectratio]{figures/#1}}%
+    {\IfFileExists{#1}%
+      {\includegraphics[width=#2,height=0.28\textheight,keepaspectratio]{#1}}%
+      {\fbox{\parbox[c][3cm][c]{0.9\linewidth}{\centering\small [COMPLETAR: subir \texttt{\detokenize{#1}}]}}}}}
 \newcommand{\insertfigure}[1]{\insertfigurew{#1}{\columnwidth}}
 
 \begin{document}
@@ -32,7 +35,7 @@
 \maketitle
 
 \begin{abstract}
-Este trabajo compara tres formas de enviar la información de un control físico (cuatro pulsadores y un potenciómetro conectados a un Arduino Uno) a un juego de secuencias hecho en Unity. Los tres protocolos son texto separado por comas (CSV), JSON y mensajes binarios con verificación CRC. Los tres envían los mismos datos y usan el mismo programa en el Arduino; solo cambia la manera de escribir cada mensaje. Se comparan el tamaño del mensaje, la rapidez de respuesta, la cantidad de mensajes por segundo, el tiempo que Unity tarda en interpretarlos y la capacidad de cada uno para detectar errores. El binario fue el más rápido, con un tiempo de ida y vuelta promedio de 4,1\,ms y 969 mensajes por segundo, seguido de CSV (5,6\,ms y 490) y JSON (9,0\,ms y 200). Con una tasa de error de bit de 0,002, solo CSV dejó pasar mensajes dañados (0,13\,\%). Ninguno perdió mensajes y, al jugar, no se percibió diferencia entre ellos. Se recomienda el binario con CRC-16 para el control del vehículo y CSV como modo de depuración.
+En este laboratorio comparamos tres protocolos para enviar a Unity el estado de un control físico hecho con un Arduino Uno (cuatro pulsadores y un potenciómetro), que maneja un juego de secuencias. Los protocolos son texto separado por comas (CSV), JSON y un formato binario con CRC-16. Los tres envían los mismos datos desde el mismo programa del Arduino, así que solo cambia la forma del mensaje. Medimos el tamaño, el tiempo de ida y vuelta, los mensajes por segundo, el tiempo de interpretación en Unity y la detección de errores. El binario fue el más rápido (4,1\,ms y 969 mensajes por segundo), seguido de CSV (5,6\,ms y 490) y JSON (9,0\,ms y 200). Con errores simulados, solo CSV dejó pasar mensajes dañados (0,13\,\%). Ninguno perdió mensajes y al jugar no notamos diferencias. Recomendamos el binario con CRC-16 para el vehículo del siguiente corte y CSV como modo de depuración.
 \end{abstract}
 
 \renewcommand{\IEEEkeywordsname}{Palabras clave}
@@ -42,7 +45,7 @@ Arduino, Unity, comunicación serial, JSON, CRC, byte stuffing, latencia.
 
 {\renewcommand{\abstractname}{Abstract}
 \begin{abstract}
-This work compares three ways of sending the data of a physical controller (four push buttons and a potentiometer connected to an Arduino Uno) to a sequence game built in Unity. The protocols are comma-separated text (CSV), JSON, and binary messages with CRC verification. All three carry the same data and run on the same Arduino program; only the way each message is written changes. The comparison covers message size, response time, messages per second, the time Unity needs to read them, and how well each one detects errors. The binary protocol was the fastest, with an average round-trip time of 4.1\,ms and 969 messages per second, followed by CSV (5.6\,ms and 490) and JSON (9.0\,ms and 200). With a bit error rate of 0.002, only CSV let corrupted messages through (0.13\,\%). None lost messages and, when playing, no difference between them was noticed. The binary protocol with CRC-16 is recommended for vehicle control, with CSV as a debugging mode.
+In this lab we compare three protocols for sending the state of a physical controller built with an Arduino Uno (four push buttons and a potentiometer) to a sequence game in Unity. The protocols are comma-separated text (CSV), JSON, and a binary format with CRC-16. All three send the same data from the same Arduino program, so only the message format changes. We measured message size, round-trip time, messages per second, parsing time in Unity, and error detection. The binary format was the fastest (4.1\,ms and 969 messages per second), followed by CSV (5.6\,ms and 490) and JSON (9.0\,ms and 200). With simulated errors, only CSV accepted corrupted messages (0.13\,\%). None lost messages and we noticed no difference while playing. We recommend the binary format with CRC-16 for the vehicle in the next stage of the course, with CSV as a debugging mode.
 \end{abstract}}
 
 \renewcommand{\IEEEkeywordsname}{Keywords}
@@ -53,7 +56,7 @@ Arduino, Unity, serial communication, JSON, CRC, byte stuffing, latency.
 % ---------------------------------------------------------------------------
 \section{Introducción}
 
-\IEEEPARstart{E}{n} un juego con control físico, el Arduino debe avisarle a Unity cada pulsación y cada giro del potenciómetro, rápido y sin errores. Esa información viaja por un cable serial como una fila de bytes, y hay varias maneras de ordenarla. El circuito utilizado para los tres casos es el mismo, conformado por cuatro pulsadores y un potenciómetro, Implementados en el mismo juego, solo cambiando la manera de escribir los mensajes. Esto nos permite tener argumentos fundamentados para la elección de protocolos en futuras entregas. 
+\IEEEPARstart{E}{n} un juego con control físico, el Arduino tiene que avisarle a Unity cada pulsación y cada giro del potenciómetro, rápido y sin errores. Esos datos viajan por el cable serial como una fila de bytes, y hay varias formas de organizarlos. En este laboratorio implementamos tres (CSV, JSON y binario) sobre el mismo circuito y el mismo juego, y las comparamos con mediciones. La idea es tener argumentos basados en datos para escoger el protocolo de las próximas entregas del curso.
 
 % ---------------------------------------------------------------------------
 \section{Objetivos}
@@ -73,126 +76,73 @@ Implementar y comparar experimentalmente distintos protocolos de comunicación e
 % ---------------------------------------------------------------------------
 \section{Marco teórico}
 
-\subsection{Cómo se arma un mensaje (framing)}
-Por un cable serial los datos llegan como una fila continua de bytes, sin indicar dónde empieza ni dónde termina cada mensaje. Por eso se necesita un formato que marque esos límites, conocido como \emph{framing} \cite{tanenbaum}. Hay dos estrategias básicas:
-
+\subsection{Cómo se separan los mensajes (framing)}
+Por el cable serial los bytes llegan uno tras otro, sin nada que indique dónde empieza o termina cada mensaje. Para separarlos se usa el \emph{framing} \cite{tanenbaum}, que tiene dos estrategias básicas:
 \begin{itemize}
-    \item \textbf{Un carácter que marca el límite.} Un byte reservado indica el fin (o el inicio) del mensaje. Por ejemplo, el salto de línea en protocolos de texto como NMEA 0183 \cite{nmea}, o el byte \texttt{0x7E} en HDLC y PPP \cite{rfc1662}. Es sencillo y, si algo falla, el receptor se vuelve a sincronizar en el siguiente límite. Su condición es que ese carácter no aparezca dentro de los datos.
-    \item \textbf{Un campo con la longitud.} Al inicio del mensaje se indica cuántos bytes siguen. Sirve para datos de cualquier valor, pero si ese campo se daña el receptor se desorienta. Por eso suele combinarse con un marcador de inicio y un código de verificación.
+    \item \textbf{Un delimitador.} Un byte reservado marca el final (o el inicio) del mensaje, como el salto de línea en NMEA 0183 \cite{nmea} o el \texttt{0x7E} de HDLC y PPP \cite{rfc1662}. Si algo falla, el receptor se recupera en el siguiente delimitador, pero ese byte no puede aparecer dentro de los datos.
+    \item \textbf{Un campo de longitud.} El mensaje indica cuántos bytes trae. Sirve para cualquier dato, pero si ese campo se daña el receptor se pierde; por eso se combina con un marcador de inicio y una verificación.
 \end{itemize}
+Estos datos de control (marcador, tipo y longitud) forman el \textbf{encabezado} del mensaje.
 
-El \textbf{encabezado} (\emph{header}) reúne los datos de control del mensaje, como el marcador de inicio, el tipo y la longitud. Así el receptor puede comprobar el mensaje antes de usar su contenido.
+En un mensaje binario cualquier dato puede coincidir con el delimitador. HDLC y PPP lo resuelven con \emph{byte stuffing}: cada \texttt{0x7E} o \texttt{0x7D} de los datos se cambia por \texttt{0x7D} seguido del byte original con XOR \texttt{0x20} \cite{rfc1662}. SLIP hace lo mismo con otros valores \cite{rfc1055}. El costo es que el mensaje puede llegar a duplicarse; COBS reduce ese aumento a 1 byte por cada 254 \cite{cobs}. En los protocolos de texto es más fácil: basta con usar solo dígitos y separadores para que el salto de línea nunca aparezca en los datos.
 
-En los mensajes binarios, cualquier valor de los datos puede coincidir con el carácter de límite. Hay tres maneras de evitarlo:
+\subsection{JSON y su lectura en Unity}
+JSON es un formato de texto con pares nombre--valor, definido en el RFC 8259 y en ECMA-404 \cite{rfc8259}, \cite{ecma404}. Se lee a simple vista y casi todos los lenguajes lo soportan, pero repite los nombres de los campos en cada mensaje y escribe los números como texto, así que ocupa más bytes. En Unity hay dos opciones para leerlo:
 \begin{itemize}
-    \item \textbf{Byte stuffing (escape de bytes).} HDLC y PPP reemplazan cada \texttt{0x7E} o \texttt{0x7D} que aparezca en los datos por dos bytes: \texttt{0x7D} (un aviso) seguido del byte original con sus bits invertidos mediante XOR con \texttt{0x20} \cite{rfc1662}. SLIP usa la misma idea con otros valores \cite{rfc1055}. Su costo es que el mensaje puede crecer; en el peor caso, se duplica.
-    \item \textbf{COBS} (\emph{Consistent Overhead Byte Stuffing}). Evita el byte reservado con un aumento máximo de 1 byte por cada 254 \cite{cobs}.
-    \item \textbf{Restringir los caracteres.} En los protocolos de texto basta con usar solo dígitos y separadores, de modo que el salto de línea nunca forma parte de los datos.
-\end{itemize}
-
-\subsection{JSON y su lectura en C\#/Unity}
-JSON es un formato de texto para intercambiar datos, definido en el RFC 8259 y en ECMA-404 \cite{rfc8259}, \cite{ecma404}. Organiza la información en pares nombre--valor, listas, números y textos. Se puede leer a simple vista y casi todos los lenguajes lo soportan. Su desventaja es que los nombres de los campos se repiten en cada mensaje y los números se escriben como texto, así que ocupa más bytes.
-
-En Unity hay dos opciones habituales para leerlo:
-\begin{itemize}
-    \item \textbf{\texttt{JsonUtility}} \cite{unityjson}. Viene incluida en Unity y es rápida y ligera. Solo lee campos públicos o marcados con \texttt{[SerializeField]}, en clases marcadas con \texttt{[Serializable]}; no lee propiedades. No admite diccionarios ni listas como raíz del documento, y no distingue un campo ausente de uno con valor por defecto.
-    \item \textbf{Newtonsoft Json.NET} \cite{newtonsoft}, disponible como paquete de Unity. Es mucho más flexible (propiedades, diccionarios, atributos de mapeo), pero usa más memoria, tarda más por mensaje y en algunas plataformas necesita configuración adicional.
+    \item \textbf{\texttt{JsonUtility}} \cite{unityjson}: viene con Unity y es rápida, pero solo lee campos públicos o con \texttt{[SerializeField]} en clases \texttt{[Serializable]}. No lee propiedades, diccionarios ni listas como raíz, y no distingue un campo ausente de uno con valor por defecto.
+    \item \textbf{Newtonsoft Json.NET} \cite{newtonsoft}: es mucho más flexible (propiedades, diccionarios, atributos), a cambio de más memoria y más tiempo por mensaje.
 \end{itemize}
 
 \subsection{Verificación de integridad}
-Para saber si un mensaje llegó dañado, el emisor agrega un valor calculado a partir de los datos y el receptor lo recalcula; si no coinciden, descarta el mensaje. La Tabla~\ref{tab:integridad} resume los métodos considerados. Un CRC es un cálculo basado en una división matemática especial entre polinomios \cite{peterson}, \cite{williams}. Maxino y Koopman muestran que las sumas de verificación simples detectan menos errores que un CRC del mismo tamaño \cite{maxino}, y Koopman y Chakravarty explican cómo elegir el polinomio según el largo del mensaje \cite{koopman}.
+Para saber si un mensaje llegó dañado, el emisor agrega un valor calculado con los datos y el receptor lo vuelve a calcular; si no coinciden, lo descarta. La Tabla~\ref{tab:integridad} compara los métodos que consideramos. La paridad, el XOR y la suma cuestan una operación por byte. El CRC trata el mensaje como un polinomio y lo divide entre un polinomio fijo \cite{peterson}, \cite{williams}; cuesta un poco más (8 pasos por byte, o una consulta a una tabla), pero detecta mucho más. Maxino y Koopman muestran que las sumas simples detectan menos errores que un CRC del mismo tamaño \cite{maxino}, y Koopman y Chakravarty explican cómo elegir el polinomio según el largo del mensaje \cite{koopman}.
 
-\begin{table*}[!t]
-\renewcommand{\arraystretch}{1.25}
+\begin{table}[!htb]
+\renewcommand{\arraystretch}{1.2}
+\setlength{\tabcolsep}{4pt}
 \caption{Métodos de verificación de integridad}
 \label{tab:integridad}
 \centering
 \footnotesize
-\begin{tabular}{>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{5.6cm}>{\raggedright\arraybackslash}p{4.4cm}>{\raggedright\arraybackslash}p{3.6cm}}
+\begin{tabular}{>{\raggedright\arraybackslash}p{1.8cm}>{\raggedright\arraybackslash}p{2.95cm}>{\raggedright\arraybackslash}p{2.95cm}}
 \hline
-\textbf{Método} & \textbf{Qué detecta} & \textbf{Qué puede pasar inadvertido} & \textbf{Costo} \\
+\textbf{Método} & \textbf{Detecta} & \textbf{Se le escapa} \\
 \hline
-Bit de paridad & Cualquier número impar de bits invertidos & Los errores con un número par de bits & 1 bit por byte (UART con paridad) \\
-Checksum XOR de 8 bits (NMEA 0183 \cite{nmea}) & Errores en una sola posición de bit & Dos errores en la misma posición de bytes distintos se cancelan; bytes intercambiados de lugar & 1 operación por byte \\
-Suma módulo 256 & Algo mejor que el XOR ante varios errores, por el acarreo de la suma & Bytes intercambiados de lugar; errores que se compensan entre sí & 1 operación por byte \\
-CRC-16/CCITT ($x^{16}+x^{12}+x^{5}+1$) \cite{peterson}, \cite{williams} & Todos los errores de 1 y 2 bits en mensajes cortos, todos los de cantidad impar de bits y todas las ráfagas de hasta 16 bits & Un error al azar pasa con probabilidad cercana a $2^{-16}$ & 8 pasos de cálculo por byte, o 1 consulta a una tabla de 256 valores \\
+Bit de paridad & Cualquier número impar de bits erróneos & Errores con un número par de bits \\
+XOR de 8 bits (NMEA \cite{nmea}) & Errores en un solo bit & Dos errores en la misma posición de bytes distintos; bytes cambiados de orden \\
+Suma módulo 256 & Algo más que el XOR, gracias al acarreo & Bytes cambiados de orden; errores que se compensan \\
+CRC-16/CCITT & Errores de 1 y 2 bits, cualquier número impar de bits y ráfagas de hasta 16 bits & Un error al azar, con probabilidad cercana a $2^{-16}$ \\
 \hline
 \end{tabular}
-\end{table*}
+\end{table}
 
 % ---------------------------------------------------------------------------
 \section{Metodología y desarrollo}
 
 \subsection{Circuito}
-Se usó un Arduino Uno R3 (Figs.~\ref{fig:circuito} y~\ref{fig:arduino-conectado}) con estas conexiones:
-\begin{itemize}
-    \item \textbf{Pulsadores:} B1 en D7, B2 en D6, B3 en D4 y B4 en D5. Cada uno va entre el pin y GND, y usa la resistencia interna del Arduino (\texttt{INPUT\_PULLUP}); al presionarlo, el pin lee \texttt{LOW}.
-    \item \textbf{Potenciómetro de 1\,k$\Omega$:} los extremos a 5\,V y GND, y el cursor en A0 (valores de 0 a 1023).
-\end{itemize}
-El programa del Arduino ignora los rebotes de los pulsadores durante 20\,ms y nunca se queda esperando con \texttt{delay()}; mide el tiempo con \texttt{millis()} para no bloquear el puerto serial. Envía un mensaje cada 20\,ms (50 por segundo) y otro de inmediato cuando cambia un pulsador. El programa \texttt{CircuitTest} sirve para comprobar el montaje, porque muestra el estado de los pulsadores y del potenciómetro en texto.
+Usamos un Arduino Uno R3 (Figs.~\ref{fig:circuito} y~\ref{fig:arduino-conectado}). Los pulsadores B1--B4 van en D7, D6, D4 y D5, cada uno entre el pin y GND con la resistencia interna activada (\texttt{INPUT\_PULLUP}), así que al presionarlos el pin lee \texttt{LOW}. El potenciómetro de 1\,k$\Omega$ va entre 5\,V y GND, con el cursor en A0 (valores de 0 a 1023).
 
-\begin{figure}[!t]
+El firmware filtra los rebotes durante 20\,ms y no usa \texttt{delay()}: mide el tiempo con \texttt{millis()} para no bloquear el puerto. Envía un mensaje cada 20\,ms (50 por segundo) y otro apenas cambia un pulsador. Para revisar el montaje usamos el programa \texttt{CircuitTest}, que muestra las entradas en texto.
+
+\begin{figure}[!htb]
     \centering
     \insertfigure{Circuito_Montado.jpeg}
     \caption{Montaje del circuito: pulsadores B1--B4 en D7, D6, D4 y D5, y potenciómetro en A0.}
     \label{fig:circuito}
 \end{figure}
 
-\begin{figure}[!t]
+\begin{figure}[!htb]
     \centering
     \insertfigure{Arduino_Uno_Conectado.jpeg}
     \caption{Arduino Uno conectado al computador por USB.}
     \label{fig:arduino-conectado}
 \end{figure}
 
-\subsection{Datos transmitidos}
-Los tres protocolos envían el mismo estado de 7 bytes (Tabla~\ref{tab:estado}). Unity controla el Arduino con unos pocos comandos de texto, iguales para los tres protocolos (Tabla~\ref{tab:comandos}).
+\subsection{Datos y comandos}
+Los tres protocolos envían el mismo estado de 7 bytes: un contador \texttt{seq} (16 bits) para detectar mensajes perdidos, los cuatro pulsadores (1 byte), el potenciómetro \texttt{pot} (16 bits) y \texttt{echo} (16 bits), que devuelve el último ping recibido.
 
-\begin{table}[!t]
-\renewcommand{\arraystretch}{1.2}
-\caption{Estado transmitido (7 bytes útiles)}
-\label{tab:estado}
-\centering
-\footnotesize
-\begin{tabular}{l l >{\raggedright\arraybackslash}p{4.2cm}}
-\hline
-\textbf{Campo} & \textbf{Tipo} & \textbf{Uso} \\
-\hline
-\texttt{seq} & uint16 & Contador de mensajes; permite detectar los que se pierden \\
-\texttt{buttons} & 4 bits & Pulsadores B1 a B4 \\
-\texttt{pot} & uint16 & Potenciómetro (0--1023) \\
-\texttt{echo} & uint16 & Último número de ping recibido; permite medir el tiempo de ida y vuelta \\
-\hline
-\end{tabular}
-\end{table}
+Unity controla el Arduino con cinco comandos de texto, iguales en los tres protocolos: \texttt{P<id>} (ping), \texttt{T} (enviar el valor de prueba), \texttt{R<ms>} (intervalo de envío; \texttt{R0} es sin pausa), \texttt{X1}/\texttt{X0} (envío continuo del valor de prueba) y \texttt{M<n>} (protocolo: 0 CSV, 1 JSON, 2 binario).
 
-\begin{table}[!t]
-\renewcommand{\arraystretch}{1.2}
-\caption{Comandos de Unity hacia el Arduino}
-\label{tab:comandos}
-\centering
-\footnotesize
-\begin{tabular}{l >{\raggedright\arraybackslash}p{5.6cm}}
-\hline
-\textbf{Comando} & \textbf{Efecto} \\
-\hline
-\texttt{P<id>} & Ping: el Arduino responde de inmediato devolviendo el número \texttt{id} en \texttt{echo} \\
-\texttt{T} & Envía un valor de prueba conocido \\
-\texttt{R<ms>} & Cambia cada cuántos milisegundos se envía un mensaje (\texttt{R0}: sin pausa) \\
-\texttt{X1} / \texttt{X0} & Activa o desactiva el envío continuo del valor de prueba \\
-\texttt{M<n>} & Elige el protocolo (0: CSV, 1: JSON, 2: binario) \\
-\hline
-\end{tabular}
-\end{table}
-
-\subsection{Protocolos implementados y justificación}
-La Tabla~\ref{tab:protocolos} resume las tres implementaciones. Se eligieron para cubrir tres puntos distintos entre legibilidad y eficiencia:
-\begin{itemize}
-    \item \textbf{CSV} es el más simple y fácil de leer. Cada mensaje es una línea de texto con valores separados por comas y termina en salto de línea. No necesita escape de bytes, porque solo usa dígitos, comas y el signo \texttt{*}. Para verificar integridad usa un XOR de 8 bits escrito en hexadecimal, al estilo NMEA \cite{nmea}.
-    \item \textbf{JSON} es un formato estructurado y extensible, muy usado en la industria \cite{rfc8259}. Escrito en una sola línea no contiene saltos de línea internos, así que tampoco necesita escape. Para verificar integridad usa la suma módulo 256 de los 7 bytes del estado.
-    \item \textbf{Binario} es el más compacto y el más robusto. Es el único que debe resolver el problema del escape de bytes. Cada mensaje empieza con el marcador \texttt{0x7E}, sigue con la longitud, el tipo y los 7 bytes del estado, y termina con un CRC-16/CCITT-FALSE (polinomio \texttt{0x1021}, valor inicial \texttt{0xFFFF}). Todo lo que sigue al marcador se escapa con el esquema HDLC \cite{rfc1662}.
-\end{itemize}
-Además, cada protocolo usa un método de integridad distinto (XOR, suma y CRC). Así, la prueba de errores permite comprobar en la práctica lo que predice la teoría.
+\subsection{Protocolos implementados}
 
 \begin{table*}[!t]
 \renewcommand{\arraystretch}{1.25}
@@ -200,149 +150,77 @@ Además, cada protocolo usa un método de integridad distinto (XOR, suma y CRC).
 \label{tab:protocolos}
 \centering
 \footnotesize
-\begin{tabular}{>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}p{4.4cm}>{\raggedright\arraybackslash}p{4.6cm}>{\raggedright\arraybackslash}p{4.6cm}}
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.4cm}>{\raggedright\arraybackslash}p{4.3cm}>{\raggedright\arraybackslash}p{5.0cm}>{\raggedright\arraybackslash}p{4.3cm}}
 \hline
  & \textbf{P1 -- CSV} & \textbf{P2 -- JSON} & \textbf{P3 -- Binario} \\
 \hline
-Mensaje & \texttt{seq,\allowbreak b1,\allowbreak b2,\allowbreak b3,\allowbreak b4,\allowbreak pot,\allowbreak echo*CS\textbackslash n} & \texttt{\{"seq",\allowbreak "b",\allowbreak "pot",\allowbreak "echo",\allowbreak "ck"\}\textbackslash n} & \texttt{7E LEN TYPE datos(7) CRC16} \\
-Límite del mensaje & Salto de línea \texttt{\textbackslash n} & Salto de línea \texttt{\textbackslash n} & Marcador \texttt{0x7E} y longitud \\
+Formato & \texttt{seq,\allowbreak b1,\allowbreak b2,\allowbreak b3,\allowbreak b4,\allowbreak pot,\allowbreak echo*CS\textbackslash n} & \texttt{\{"seq",\allowbreak "b",\allowbreak "pot",\allowbreak "echo",\allowbreak "ck"\}\textbackslash n} & \texttt{7E LEN TYPE datos(7) CRC16} \\
+Valor de prueba en el cable & \texttt{32126,0,1,0,1,\allowbreak 638,125*3F\textbackslash n} (25 bytes) & \texttt{\{"seq":32126,\allowbreak "b":[0,1,0,1],\allowbreak "pot":638,\allowbreak "echo":125,\allowbreak "ck":2\}\textbackslash n} (56 bytes) & \texttt{7E 08 01 7D 5E 7D 5D 0A 7D 5E 02 7D 5D 00 8C 7D 5D} (17 bytes; 12 sin escapes) \\
+Delimitación & Salto de línea & Salto de línea & Marcador \texttt{0x7E} y longitud \\
 Integridad & XOR de 8 bits, en hexadecimal & Suma módulo 256 del estado & CRC-16/CCITT-FALSE \\
-Escape de bytes & No necesario (caracteres restringidos) & No necesario (JSON en una línea) & HDLC: \texttt{0x7E}/\texttt{0x7D} $\rightarrow$ \texttt{0x7D}, $b \oplus$\,\texttt{0x20} \\
-Cómo lo lee Unity & Se separa por comas y se valida cada número & \texttt{JsonUtility} & Byte a byte, con una máquina de estados \\
+Escape de bytes & No hace falta (solo dígitos y separadores) & No hace falta (JSON en una línea) & HDLC: \texttt{0x7E}/\texttt{0x7D} $\rightarrow$ \texttt{0x7D}, $b \oplus$\,\texttt{0x20} \\
+Lectura en Unity & Separar por comas y validar cada número & \texttt{JsonUtility} & Byte a byte, con una máquina de estados \\
 \hline
 \end{tabular}
 \end{table*}
 
-En Unity, un hilo aparte lee el puerto con \texttt{System.IO.Ports.SerialPort} y entrega los bytes al decodificador uno por uno. Así nunca se supone que un mensaje llega completo en una sola lectura. El hilo anota la hora de llegada de cada mensaje y lo guarda en una cola; en cada cuadro del juego, el hilo principal toma todos los mensajes pendientes. Si el puerto se desconecta o llega un mensaje dañado, el error se cuenta y el juego sigue funcionando.
+Escogimos tres protocolos que cubren puntos distintos entre legibilidad y eficiencia (Tabla~\ref{tab:protocolos}):
+\begin{itemize}
+    \item \textbf{CSV:} una línea de texto con valores separados por comas. Solo usa dígitos, comas y \texttt{*}, así que no necesita escape. Verifica con un XOR de 8 bits en hexadecimal, al estilo NMEA \cite{nmea}.
+    \item \textbf{JSON:} un formato estructurado y extensible, muy usado en la industria \cite{rfc8259}. Escrito en una sola línea tampoco necesita escape. Verifica con la suma módulo 256 de los 7 bytes del estado.
+    \item \textbf{Binario:} el más compacto. Empieza con \texttt{0x7E}, sigue con la longitud, el tipo y el estado, y termina con un CRC-16/CCITT-FALSE (polinomio \texttt{0x1021}, valor inicial \texttt{0xFFFF}). Es el único que necesita escape: todo lo que sigue al marcador usa el esquema HDLC \cite{rfc1662}.
+\end{itemize}
+Como cada protocolo usa un método de integridad distinto (XOR, suma y CRC), la prueba de errores también nos sirve para comprobar la teoría.
+
+En Unity, un hilo aparte lee el puerto con \texttt{System.IO.Ports.SerialPort} y pasa los bytes al decodificador uno por uno, así que nunca suponemos que un mensaje llega completo en una sola lectura. Cada mensaje se guarda en una cola con su hora de llegada, y el juego los procesa todos en cada cuadro. Si el puerto se desconecta o llega un mensaje dañado, el error se cuenta y el juego sigue funcionando.
 
 \subsection{Procedimiento de medición}
-Todas las pruebas usan el mismo montaje: Arduino Uno R3 a 115200 baudios (formato 8N1, 10 bits por byte), un mensaje cada 20\,ms, filtro de rebotes de 20\,ms y Unity 6000.0.82f1 en modo Play del editor. Equipo de medición: portátil con procesador AMD Ryzen 5 5500U, 16\,GB de RAM y Windows 10, con el Arduino conectado directamente a un puerto USB del equipo, sin hub (puerto COM4). Como los tres protocolos salen del mismo programa (\texttt{SerialController}) y Unity elige cuál usar con \texttt{M<n>}, cualquier diferencia se debe a la forma del mensaje.
+Todas las pruebas se hicieron con el mismo montaje: 115200 baudios en formato 8N1 (10 bits por byte), un mensaje cada 20\,ms y Unity 6000.0.82f1 en modo Play del editor. Usamos un portátil con AMD Ryzen 5 5500U, 16\,GB de RAM y Windows 10, con el Arduino conectado directamente al USB (COM4), sin hub. Como el programa del Arduino es el mismo y Unity cambia de protocolo con \texttt{M<n>}, cualquier diferencia viene de la forma del mensaje.
 
-Para cada protocolo (CSV, JSON y binario) se cierra el Monitor Serial, se conecta Unity al puerto, se elige el protocolo y se pulsa \emph{Full run}. En unos 45\,s, sin tocar los controles, se ejecutan cuatro pruebas y se guarda una fila en \texttt{Measurements/summary.csv}:
+Para cada protocolo cerramos el Monitor Serial, conectamos Unity, elegimos el protocolo y pulsamos \emph{Full run}. En unos 45\,s, sin tocar los controles, se ejecutan cuatro pruebas y se guarda una fila en \texttt{Measurements/summary.csv}:
 \begin{enumerate}
-    \item \textbf{Valor de prueba.} Unity envía \texttt{T} y el Arduino responde un valor fijo (\texttt{seq=32126}, \texttt{b=[0,1,0,1]}, \texttt{pot=638}, \texttt{echo=125}). Sus bytes incluyen \texttt{0x7E} y \texttt{0x7D}, así que también se comprueba el escape de bytes.
-    \item \textbf{Tiempo de ida y vuelta (RTT).} Unity envía 500 pings (\texttt{P<id>}), uno cada 20\,ms, y mide cuánto tarda en volver cada \texttt{echo}. Se reportan promedio, mediana, percentil 95, mínimo, máximo y desviación estándar.
-    \item \textbf{Máximo de mensajes por segundo.} Con \texttt{R0}, el Arduino transmite sin pausa durante 5\,s. Se cuentan mensajes y bytes por segundo, mensajes perdidos (saltos en \texttt{seq}) y errores.
-    \item \textbf{Errores.} El cable USB casi nunca falla, así que durante 15\,s Unity invierte al azar cada bit recibido con probabilidad 0,002 antes de decodificarlo. Interesa qué porcentaje de mensajes dañados el protocolo acepta sin darse cuenta.
+    \item \textbf{Valor de prueba:} con \texttt{T}, el Arduino envía un valor fijo (\texttt{seq=32126}, \texttt{b=[0,1,0,1]}, \texttt{pot=638}, \texttt{echo=125}) cuyos bytes incluyen \texttt{0x7E} y \texttt{0x7D}, para probar también el escape.
+    \item \textbf{Tiempo de ida y vuelta (RTT):} 500 pings, uno cada 20\,ms; se mide cuánto tarda en volver cada \texttt{echo}.
+    \item \textbf{Máximo de mensajes por segundo:} con \texttt{R0}, el Arduino transmite sin pausa durante 5\,s.
+    \item \textbf{Errores:} durante 15\,s, Unity invierte al azar cada bit recibido con probabilidad 0,002, porque el cable USB casi nunca falla por sí solo.
 \end{enumerate}
 
-Se espera que el RTT dependa de dos cosas: los bytes de la respuesta (cada uno tarda unos 87\,$\mu$s en el cable) y el tiempo que Unity tarda en interpretarla. Lo demás (USB, Arduino, sistema operativo) es igual para los tres. Del mismo modo, el máximo teórico de mensajes por segundo sale de dividir los 11\,520 bytes por segundo del cable entre el largo del mensaje.
-
-La legibilidad se evalúa con los bytes por mensaje, la parte que es dato útil (siempre los mismos 7 bytes) frente al relleno, si se puede leer en el Monitor Serial y una valoración cualitativa de cuatro tareas: leer el estado, depurar un error, agregar un campo y escribir el decodificador.
+Esperábamos que el RTT dependiera sobre todo de los bytes de la respuesta (cada uno tarda unos 87\,$\mu$s en el cable) y del tiempo de interpretación en Unity. También esperábamos que el máximo de mensajes por segundo fuera los 11\,520 bytes/s del cable divididos entre el largo del mensaje. La legibilidad la evaluamos con el relleno (lo que no es dato útil), con si el mensaje se lee en el Monitor Serial y con una valoración cualitativa del diseño.
 
 \subsection{Simulador asignado: S3 -- Juego de secuencias}
-El juego muestra una secuencia creciente de casillas de colores con tonos, y el jugador debe repetirla con los pulsadores B1 a B4. El potenciómetro ajusta el tempo: el tiempo entre pasos de la secuencia va de 0,90\,s a 0,22\,s, y el tiempo para responder, de 5\,s a 2\,s. Para interpretar los resultados importan tres ideas:
-\begin{enumerate}
-    \item \textbf{Cada pulsación es un evento único.} Perderla o repetirla hace fallar la partida aunque el jugador haya acertado. Por eso importa más no perder mensajes (se vigila con \texttt{seq}) que enviar muchos por segundo. El Arduino envía un mensaje apenas cambia un pulsador, y Unity revisa todos los mensajes recibidos en cada cuadro del juego.
-    \item \textbf{La latencia de los pulsadores se nota} en la respuesta visual y sonora, sobre todo con el tempo más rápido (0,22\,s por paso).
-    \item \textbf{El potenciómetro cambia despacio}, así que tolera una latencia mayor.
-\end{enumerate}
-Por eso el S3 exige poco ancho de banda, pero es muy sensible a la pérdida de eventos.
+El juego muestra una secuencia creciente de casillas de colores con tonos, y el jugador la repite con B1--B4. El potenciómetro ajusta el tempo: de 0,90\,s a 0,22\,s entre pasos, y de 5\,s a 2\,s para responder.
+
+Para este juego lo más importante es no perder pulsaciones: perder o repetir una hace fallar la partida aunque el jugador acierte. Por eso el Arduino envía un mensaje apenas cambia un pulsador, y Unity revisa todos los mensajes de cada cuadro. La latencia de los pulsadores se nota en la respuesta visual y sonora, mientras que el potenciómetro cambia despacio y tolera más retardo. En resumen, el S3 necesita poco ancho de banda, pero no tolera perder eventos.
 
 % ---------------------------------------------------------------------------
 \section{Resultados}
 
-\subsection{Prueba de valor}
-Los tres protocolos decodificaron correctamente el valor de prueba, incluidos los bytes \texttt{0x7E} y \texttt{0x7D} del binario. Los mensajes recibidos en el cable se muestran en la Tabla~\ref{tab:tramas}.
-
-\begin{table*}[!t]
-\renewcommand{\arraystretch}{1.25}
-\caption{Mensajes del valor de prueba en el cable}
-\label{tab:tramas}
-\centering
-\footnotesize
-\begin{tabular}{l l r}
-\hline
-\textbf{Protocolo} & \textbf{Mensaje} & \textbf{Bytes} \\
-\hline
-CSV & \texttt{32126,0,1,0,1,638,125*3F\textbackslash n} & 25 \\
-JSON & \texttt{\{"seq":32126,"b":[0,1,0,1],"pot":638,"echo":125,"ck":2\}\textbackslash n} & 56 \\
-Binario & \texttt{7E 08 01 7D 5E 7D 5D 0A 7D 5E 02 7D 5D 00 8C 7D 5D} & 17 (12 sin escapes) \\
-\hline
-\end{tabular}
-\end{table*}
-
-\subsection{Comparación de protocolos}
-La Tabla~\ref{tab:comparacion} reúne las métricas, obtenidas con el script \texttt{Tools/analyze\_measurements.py} a partir de los datos de \texttt{Measurements/}. El máximo teórico de mensajes por segundo usa el tamaño promedio de los mensajes medidos; los bytes del valor de prueba y el relleno sirven para comparar el diseño de cada formato. JSON se interpreta con \texttt{JsonUtility}. Las figuras muestran el tiempo de ida y vuelta (Fig.~\ref{fig:latencia}), los bytes por mensaje y los mensajes por segundo (Fig.~\ref{fig:throughput}), los errores no detectados (Fig.~\ref{fig:robustez}) y el tiempo de interpretación (Fig.~\ref{fig:deserializacion}).
-
-\begin{table}[!t]
-\renewcommand{\arraystretch}{1.2}
-\caption{Comparación de los tres protocolos (JSON con \texttt{JsonUtility})}
-\label{tab:comparacion}
-\centering
-\footnotesize
-\begin{tabular}{>{\raggedright\arraybackslash}p{3.6cm} c c c}
-\hline
-\textbf{Métrica} & \textbf{CSV} & \textbf{JSON} & \textbf{Binario} \\
-\hline
-Bytes por mensaje, valor de prueba & 25 & 56 & 17 \\
-Bytes por mensaje, promedio medido & 23,4 & 57,6 & 12,0 \\
-Relleno, valor de prueba (parte que no es dato) & 72,0\,\% & 87,5\,\% & 58,8\,\% \\
-Mensajes por segundo, máximo teórico & 480,0 & 196,7 & 949,7 \\
-Mensajes por segundo, medido & 489,5 & 200,5 & 969,1 \\
-RTT promedio (ms) & 5,58 & 8,96 & 4,14 \\
-RTT percentil 95 (ms) & 7,30 & 12,07 & 6,02 \\
-Tiempo de interpretación ($\mu$s) & 61,6 & 121,3 & 0,9 \\
-Errores no detectados (\%) & 0,13 & 0,00 & 0,00 \\
-Mensajes perdidos & 0 & 0 & 0 \\
-Legible en el Monitor Serial & Sí & Sí & No \\
-\hline
-\end{tabular}
-\end{table}
-
-\begin{figure}[!t]
+\begin{figure*}[!t]
     \centering
-    \insertfigure{figures/fig_latency.png}
-    \caption{Distribución del tiempo de ida y vuelta (RTT) por protocolo.}
-    \label{fig:latencia}
-\end{figure}
-
-\begin{figure}[!t]
-    \centering
-    \insertfigure{figures/fig_size_throughput.png}
-    \caption{Bytes por mensaje y mensajes por segundo máximos, medidos frente a los teóricos.}
-    \label{fig:throughput}
-\end{figure}
-
-\begin{figure}[!t]
-    \centering
-    \insertfigure{figures/fig_robustness.png}
-    \caption{Porcentaje de errores no detectados con una tasa de error de bit de 0,002.}
-    \label{fig:robustez}
-\end{figure}
-
-\begin{figure}[!t]
-    \centering
-    \insertfigure{figures/fig_deserialization.png}
-    \caption{Tiempo que Unity tarda en interpretar cada mensaje (JSON con \texttt{JsonUtility}).}
-    \label{fig:deserializacion}
-\end{figure}
-
-\subsection{Legibilidad}
-La Tabla~\ref{tab:legibilidad} resume la valoración cualitativa de cada protocolo, según su diseño.
-
-\begin{table}[!t]
-\renewcommand{\arraystretch}{1.2}
-\caption{Legibilidad y facilidad de mantenimiento}
-\label{tab:legibilidad}
-\centering
-\footnotesize
-\begin{tabular}{>{\raggedright\arraybackslash}p{3.0cm} c c c}
-\hline
-\textbf{Aspecto} & \textbf{CSV} & \textbf{JSON} & \textbf{Binario} \\
-\hline
-Leer el estado a simple vista & Alta & Alta & Baja \\
-Encontrar un error al depurar & Media & Alta & Baja \\
-Agregar un campo nuevo & Media & Alta & Baja \\
-Escribir el decodificador & Alta & Alta & Baja \\
-\hline
-\end{tabular}
-\end{table}
-
-En CSV los valores no llevan nombre y su orden debe ser idéntico en el Arduino y en Unity, por eso es de legibilidad media al depurar y al agregar campos. JSON incluye el nombre de cada campo, de modo que se entiende solo y admite campos nuevos con facilidad; para leerlo basta con una librería. En el binario hay que conocer la posición de cada byte y calcular el CRC y los escapes, así que se necesita una herramienta para leerlo y más trabajo para modificarlo.
-
-\subsection{Funcionamiento en el simulador}
-La Fig.~\ref{fig:simulador} muestra el juego con cada protocolo activo. En las tres capturas el contador de mensajes perdidos (\texttt{seq}) está en cero. Al jugar, la experiencia se sintió similar con los tres protocolos y no se percibió ninguna diferencia.
+    \begin{minipage}[b]{0.48\textwidth}
+        \centering
+        \insertfigurew{fig_latency.png}{\linewidth}\\[2pt]
+        {\footnotesize (a) Tiempo de ida y vuelta (RTT)}
+    \end{minipage}\hfill
+    \begin{minipage}[b]{0.48\textwidth}
+        \centering
+        \insertfigurew{fig_size_throughput.png}{\linewidth}\\[2pt]
+        {\footnotesize (b) Bytes por mensaje y mensajes por segundo}
+    \end{minipage}
+    \par\medskip
+    \begin{minipage}[b]{0.48\textwidth}
+        \centering
+        \insertfigurew{fig_robustness.png}{\linewidth}\\[2pt]
+        {\footnotesize (c) Errores no detectados (tasa de error de bit de 0,002)}
+    \end{minipage}\hfill
+    \begin{minipage}[b]{0.48\textwidth}
+        \centering
+        \insertfigurew{fig_deserialization.png}{\linewidth}\\[2pt]
+        {\footnotesize (d) Tiempo de interpretación en Unity}
+    \end{minipage}
+    \caption{Resultados de las mediciones con cada protocolo (JSON con \texttt{JsonUtility}).}
+    \label{fig:resultados}
+\end{figure*}
 
 \begin{figure*}[!t]
     \centering
@@ -361,52 +239,83 @@ La Fig.~\ref{fig:simulador} muestra el juego con cada protocolo activo. En las t
         \insertfigurew{screenshot_Binary_play.png}{\linewidth}\\[2pt]
         {\footnotesize (c) Binario}
     \end{minipage}
-    \caption{Simulador S3 jugando con cada protocolo. A la izquierda de cada captura se ven los mensajes por segundo, los bytes por mensaje y el último mensaje recibido.}
+    \caption{El juego S3 con cada protocolo. A la izquierda de cada captura se ven los mensajes por segundo, los bytes por mensaje y el último mensaje recibido. Los contadores de errores vienen casi todos de la prueba con errores simulados, no de la partida.}
     \label{fig:simulador}
 \end{figure*}
+
+\subsection{Prueba de valor}
+Los tres protocolos decodificaron bien el valor de prueba, incluidos los bytes \texttt{0x7E} y \texttt{0x7D} escapados en el binario. La Tabla~\ref{tab:protocolos} muestra cómo se ve ese valor en el cable con cada formato: 25 bytes en CSV, 56 en JSON y 17 en binario.
+
+\subsection{Mediciones}
+La Tabla~\ref{tab:comparacion} reúne todas las métricas, calculadas con \texttt{Tools/analyze\_measurements.py} a partir de los datos de \texttt{Measurements/}, y la Fig.~\ref{fig:resultados} las muestra en gráficas. El máximo teórico de mensajes por segundo usa el tamaño promedio medido, y el relleno se calcula sobre el valor de prueba.
+
+\begin{table}[!htb]
+\renewcommand{\arraystretch}{1.15}
+\setlength{\tabcolsep}{4pt}
+\caption{Resultados de los tres protocolos (JSON con \texttt{JsonUtility})}
+\label{tab:comparacion}
+\centering
+\footnotesize
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.6cm} c c c}
+\hline
+\textbf{Métrica} & \textbf{CSV} & \textbf{JSON} & \textbf{Binario} \\
+\hline
+\multicolumn{4}{l}{\textit{Tamaño y velocidad}} \\
+Bytes por mensaje (promedio) & 23,4 & 57,6 & 12,0 \\
+Relleno (lo que no es dato) & 72,0\,\% & 87,5\,\% & 58,8\,\% \\
+Mensajes/s, máximo teórico & 480,0 & 196,7 & 949,7 \\
+Mensajes/s, medido & 489,5 & 200,5 & 969,1 \\
+RTT promedio (ms) & 5,58 & 8,96 & 4,14 \\
+RTT percentil 95 (ms) & 7,30 & 12,07 & 6,02 \\
+Interpretación en Unity ($\mu$s) & 61,6 & 121,3 & 0,9 \\
+\hline
+\multicolumn{4}{l}{\textit{Integridad}} \\
+Errores no detectados (\%) & 0,13 & 0,00 & 0,00 \\
+Mensajes perdidos & 0 & 0 & 0 \\
+\hline
+\multicolumn{4}{l}{\textit{Legibilidad (valoración cualitativa)}} \\
+Legible en el Monitor Serial & Sí & Sí & No \\
+Leer el estado a simple vista & Alta & Alta & Baja \\
+Encontrar un error al depurar & Media & Alta & Baja \\
+Agregar un campo nuevo & Media & Alta & Baja \\
+Escribir el decodificador & Alta & Alta & Baja \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Funcionamiento en el simulador}
+La Fig.~\ref{fig:simulador} muestra el juego con cada protocolo. En las tres capturas el contador de mensajes perdidos está en cero, y al jugar no notamos ninguna diferencia entre los protocolos.
 
 % ---------------------------------------------------------------------------
 \section{Análisis y discusión}
 
-El tamaño del mensaje explica casi todo lo que se midió: cuanto más corto, más mensajes caben en el cable y menos tarda cada respuesta.
+En general, el tamaño del mensaje explica casi todo lo que medimos.
 
-\textbf{Mensajes por segundo.} El cable mueve 11\,520 bytes por segundo, así que el largo del mensaje fija el límite. El binario llegó a 969 mensajes por segundo, casi el doble que CSV (490) y 4,8 veces más que JSON (200). Los valores medidos quedaron a un 2\,\% del máximo teórico, de modo que ni el Arduino ni Unity fueron el cuello de botella (Fig.~\ref{fig:throughput}).
+\textbf{Velocidad.} Como el cable mueve 11\,520 bytes/s, el mensaje más corto gana: el binario llegó a 969 mensajes por segundo, casi el doble que CSV y unas 4,8 veces más que JSON (Fig.~\ref{fig:resultados}b). Los tres quedaron a un 2\,\% del máximo teórico, así que el límite fue el cable y no el Arduino ni Unity.
 
-\textbf{Latencia.} Cada byte adicional suma unos 87\,$\mu$s. Con 34 bytes más, JSON debía tardar 3,0\,ms más que CSV; tardó 3,4\,ms. El binario, con 11 bytes menos, debía ahorrar 1,0\,ms y ahorró 1,4\,ms (Fig.~\ref{fig:latencia}). El peor caso (percentil 95 de JSON, 12,1\,ms) queda por debajo de un cuadro a 60\,FPS (16,7\,ms) y muy lejos de los 220\,ms mínimos entre pasos del juego.
+\textbf{Latencia.} Cada byte de más suma unos 87\,$\mu$s. Con eso esperábamos que JSON tardara 3,0\,ms más que CSV, y medimos 3,4\,ms; para el binario esperábamos 1,0\,ms menos que CSV, y medimos 1,4\,ms (Fig.~\ref{fig:resultados}a). El resto lo explica el tiempo de interpretación. Ni el peor caso (percentil 95 de JSON, 12,1\,ms) llega a la duración de un cuadro a 60\,FPS (16,7\,ms).
 
-\textbf{Interpretación.} Leer un mensaje cuesta menos de 1\,$\mu$s en binario, unos 62\,$\mu$s en CSV y unos 121\,$\mu$s en JSON (Fig.~\ref{fig:deserializacion}). La diferencia es la conversión de texto a números, que el binario no necesita. Aun así, JSON usa menos del 1\,\% de un cuadro. El retardo hasta que el juego usa el mensaje fue igual en los tres (3,0 a 3,2\,ms), porque depende del ritmo del juego y no del protocolo.
+\textbf{Interpretación.} El binario se lee en menos de 1\,$\mu$s porque no tiene que convertir texto a números; CSV tarda unos 62\,$\mu$s y JSON unos 121\,$\mu$s (Fig.~\ref{fig:resultados}d). Aun así, JSON usa menos del 1\,\% de un cuadro. El retardo entre la llegada del mensaje y su uso en el juego fue casi igual en los tres (3,0 a 3,2\,ms), porque depende del ritmo del juego y no del protocolo.
 
-\textbf{Robustez.} Con una tasa de error de bit de 0,002 (Fig.~\ref{fig:robustez}):
-\begin{itemize}
-    \item CSV aceptó 3 mensajes dañados de 2271 (0,13\,\%); JSON y binario, ninguno.
-    \item El XOR de CSV y el CRC del binario detectaron entre el 88 y el 89\,\% de los errores; el resto se descartó por formato roto.
-    \item En JSON la suma detectó solo el 5\,\% (90 de 1821). El 95\,\% restante se descartó porque el texto dejó de ser JSON válido: su robustez viene del formato, no de la suma.
-    \item Con unos 2000 mensajes dañados por prueba no se distingue el CRC-16 de la suma. La teoría predice un error no detectado cada 65\,536, fuera del alcance de esta prueba.
-\end{itemize}
-Además, JSON aceptó menos mensajes (1282) que CSV (4701) o binario (7886), porque con la misma tasa de error un mensaje largo se daña con más frecuencia.
+\textbf{Robustez.} Con los errores simulados, solo CSV aceptó mensajes dañados: 3 de 2271 (Fig.~\ref{fig:resultados}c). Lo interesante es quién detecta los errores. En CSV y en binario, el XOR y el CRC atraparon casi nueve de cada diez, y el resto cayó porque el formato quedó roto. En JSON la suma solo atrapó el 5\,\%; el 95\,\% restante se descartó porque el texto dejó de ser un JSON válido. Con unos 2000 mensajes dañados por prueba no alcanzamos a distinguir el CRC de la suma, ya que la teoría predice un fallo del CRC cada 65\,536.
 
-\textbf{Legibilidad.} CSV y JSON se leen en el Monitor Serial. El binario necesita herramientas, como el visor de la última trama en Unity o el script \texttt{Tools/protocol\_reference.py}.
+\textbf{Legibilidad.} CSV y JSON se pueden leer en el Monitor Serial. En CSV los valores no tienen nombre y su orden debe coincidir en ambos lados; JSON se entiende solo y acepta campos nuevos con facilidad. El binario exige conocer la posición de cada byte y calcular el CRC y los escapes, así que para depurarlo usamos el visor de tramas de Unity o el script \texttt{Tools/protocol\_reference.py}.
 
-\textbf{Para el S3.} No se perdió ningún mensaje y la latencia máxima (14,5\,ms) es pequeña frente al juego. Los tres protocolos sirven, así que la elección depende de la depuración y de la facilidad para ampliar el sistema, no de la rapidez.
+\textbf{Para el S3.} No se perdió ningún mensaje, y la latencia máxima (14,5\,ms) es mínima frente a los 220\,ms entre pasos. Cualquiera de los tres sirve para este juego, así que la elección depende más de la depuración y de qué tan fácil sea ampliar el sistema.
 
 % ---------------------------------------------------------------------------
 \section{Conclusiones}
-Los tres protocolos transmitieron correctamente el estado del control, ninguno perdió mensajes y, al jugar, no se notó diferencia entre ellos. Esto es coherente con los datos: la latencia máxima medida (14,5\,ms) es muy pequeña frente al tiempo entre pasos del juego (0,22\,s o más). Para el S3, la rapidez no decide la elección.
+Los tres protocolos funcionaron con el juego sin perder mensajes, y al jugar no notamos diferencias. Los datos lo explican: la latencia más alta (14,5\,ms) es muy pequeña frente al tiempo entre pasos del juego. Para el S3, la rapidez no define la elección.
 
-Las diferencias aparecen en otros aspectos:
-\begin{itemize}
-    \item \textbf{Tamaño.} El binario usa 12 bytes por mensaje, frente a 23 de CSV y 58 de JSON. Por eso permite casi el doble de mensajes por segundo que CSV y unas 4,8 veces más que JSON. A 50 mensajes por segundo, JSON ocupa cerca de la cuarta parte del cable solo con el estado actual (2914 de 11\,520 bytes por segundo), y el binario, cerca del 5\,\%.
-    \item \textbf{Robustez.} Solo CSV aceptó mensajes dañados. El CRC y el XOR detectaron casi nueve de cada diez errores; en JSON, el 95\,\% se descartó por el formato y no por la suma de verificación.
-    \item \textbf{Legibilidad.} CSV y JSON se leen a simple vista; el binario exige herramientas y más trabajo para modificarlo.
-\end{itemize}
+Las diferencias reales están en el tamaño, la robustez y la legibilidad. El binario es el más corto (12 bytes frente a 23 de CSV y 58 de JSON): a 50 mensajes por segundo ocupa cerca del 5\,\% del cable, mientras que JSON ya usa la cuarta parte. Solo CSV dejó pasar mensajes dañados, y JSON se protege más por su formato que por su suma. A cambio, CSV y JSON se leen a simple vista y el binario necesita herramientas.
 
-Para el Corte~2 (vehículo) se recomienda el binario con CRC-16. Se agregarán más sensores, y con un formato de texto cada dato nuevo alarga el mensaje; además, los motores generan ruido eléctrico, y el CRC es la verificación más fiable de las tres. CSV queda como modo de depuración, porque transporta el mismo estado y se lee en el Monitor Serial. Para el proyecto final se mantiene la misma elección: el binario ocupa cerca del 5\,\% del cable con el estado actual, lo que deja ancho de banda libre para los sensores que se sumen. JSON conviene si lo que más importa es agregar campos fácilmente y el volumen de datos es pequeño.
+Para el vehículo del Corte~2 recomendamos el binario con CRC-16. Si el vehículo suma sensores, cada dato nuevo alarga mucho más un mensaje de texto; y si tiene motores, su ruido eléctrico hace más valiosa la verificación más fuerte de las tres. CSV queda como modo de depuración, porque lleva el mismo estado y se lee en el Monitor Serial. Para el proyecto final mantenemos la misma elección, ya que el binario deja casi todo el ancho de banda libre para nuevos sensores. JSON tendría sentido si lo más importante fuera agregar campos con facilidad y hubiera pocos datos.
 
-Estos resultados tienen límites. Cada protocolo se midió en una sola corrida y en un solo equipo, y los errores se simularon por software, sin el ruido real de motores. Con unos 2000 mensajes dañados por prueba no se puede distinguir el CRC-16 de la suma de JSON. Una prueba con el vehículo funcionando permitiría confirmar la ventaja del CRC.
+Nuestros resultados tienen límites: medimos una sola corrida por protocolo, en un solo equipo, y los errores fueron simulados por software. Una prueba con el vehículo y sus motores permitiría confirmar la ventaja del CRC.
 
 % ---------------------------------------------------------------------------
 \section{Repositorio}
-El código fuente está disponible en \url{https://github.com/COKII5/Comparacion-experimental-de-protocolos-de-comunicacion-serial}. Contiene las carpetas \texttt{Arduino/} (el programa \texttt{SerialController}, con un codificador por protocolo, y la prueba del circuito), \texttt{Unity/} (el simulador S3), \texttt{Tools/} (codificador de referencia y análisis), \texttt{Measurements/} (datos medidos) e \texttt{Informe/} (este documento).
+El código está en \url{https://github.com/COKII5/Comparacion-experimental-de-protocolos-de-comunicacion-serial}, con las carpetas \texttt{Arduino/} (firmware y prueba del circuito), \texttt{Unity/} (simulador S3), \texttt{Tools/} (codificador de referencia y análisis), \texttt{Measurements/} (datos medidos) e \texttt{Informe/} (este documento).
 
 % references section
 \begin{thebibliography}{13}
